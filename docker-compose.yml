@@ -1,0 +1,72 @@
+services:
+  # --- Kafka ---
+  kafka:
+    image: apache/kafka:3.7.0
+    container_name: telecom-kafka
+    hostname: kafka
+    ports:
+      - "9092:9092"
+      - "9094:9094"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT'
+      KAFKA_LISTENERS: 'PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9094'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:9093'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_CLUSTER_ID: '4L6g3nShT-eMCtK--X86sw'
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+    networks:
+      - telecom-net
+    volumes:
+      - kafka_data:/tmp/kraft-combined-logs
+
+  # --- ClickHouse ---
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    container_name: telecom-clickhouse
+    hostname: clickhouse
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    environment:
+      - CLICKHOUSE_DB=telecom_db
+      - CLICKHOUSE_USER=telecom_user
+      - CLICKHOUSE_PASSWORD=telecom_pass
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    networks:
+      - telecom-net
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+
+  # --- CDR Event Generator ---
+  generator:
+    image: python:3.10-slim
+    container_name: telecom-generator
+    hostname: generator
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: >
+      bash -c "pip install confluent-kafka faker && python generator.py"
+    networks:
+      - telecom-net
+    depends_on:
+      - kafka
+
+networks:
+  telecom-net:
+    driver: bridge
+
+volumes:
+  kafka_data:
+  clickhouse_data:
