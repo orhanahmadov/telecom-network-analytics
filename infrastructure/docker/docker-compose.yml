@@ -1,0 +1,51 @@
+
+services:
+  postgres:
+    image: postgres:15.6-alpine
+    container_name: telecom-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-telecom_db}
+      POSTGRES_USER: ${POSTGRES_USER:-telecom_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-telecom_pass_secret}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ../../storage/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-telecom_user} -d ${POSTGRES_DB:-telecom_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3-alpine
+    container_name: telecom-clickhouse
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-telecom_analytics}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-ch_user}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-ch_pass_secret}
+    ports:
+      - "${CLICKHOUSE_PORT:-8123}:8123"
+      - "9000:9000"
+    volumes:
+      - ch_data:/var/lib/clickhouse
+      - ../../storage/clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pg_data:
+  ch_data:

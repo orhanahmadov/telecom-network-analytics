@@ -1,0 +1,6 @@
+psycopg2-binary==2.9.9
+clickhouse-driver==0.2.6
+pandas==2.2.1
+requests==2.31.0
+pytest==8.0.2
+python-dotenv==1.0.1
