@@ -19,11 +19,11 @@ EVENT_TYPES = ['VOICE', 'SMS', 'DATA']
 
 def delivery_report(err, msg):
     if err is not None:
-        print(f"❌ Ошибка отправки: {err}")
+        print(f"❌ Sending error: {err}")
     else:
-        print(f"✅ Доставлено в {msg.topic()} [{msg.partition()}]")
+        print(f"✅ Delivered to {msg.topic()} [{msg.partition()}]")
 
-print(f"🚀 Запуск генератора CDR событий в топик {TOPIC_NAME}...")
+print(f"🚀 Launching the CDR event generator for the topic {TOPIC_NAME}...")
 
 try:
     while True:
@@ -48,7 +48,7 @@ try:
             value=json.dumps(payload).encode('utf-8'),
             callback=delivery_report
         )
-        # Обязательный сброс буфера для доставки сетевого пакета!
+        # Mandatory buffer flush for network packet delivery!
         producer.poll(0)
         producer.flush()
 
@@ -56,5 +56,5 @@ try:
         time.sleep(0.3)
 
 except KeyboardInterrupt:
-    print("\n🛑 Остановка...")
+    print("\n🛑 Stop...")
     producer.flush()
