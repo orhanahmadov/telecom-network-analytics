@@ -2,9 +2,12 @@
 CLI entrypoint: consumes the Debezium CDC topic and lands the messages, unmodified,
 as newline-delimited JSON batch files in RustFS (S3-compatible object storage).
 
-Object key: raw/network_events/dt=<YYYY-MM-DD>/p<partition>_<first_offset>-<last_offset>.jsonl
-  * dt comes from the Kafka message timestamp of the first record in the batch (NOT the
-    wall clock), so re-processing the same offsets yields the same key even on another day.
+Object key: raw/network_events/dt=<YYYY-MM-DD>/hr=<HH>/p<partition>_<first_offset>-<last_offset>.jsonl
+  * dt and hr (UTC) come from the Kafka message timestamp of the first record in the batch
+    (NOT the wall clock), so re-processing the same offsets yields the same key even later.
+  * The hour partition is the INGESTION hour: a batch belongs to the hour its first message
+    arrived, so it can hold a few events from the next hour. It lets the hourly DAG address one
+    slice of the lake; filtering by real event time happens later, in staging.
   * the offset range in the key makes re-runs idempotent: the same offsets overwrite the
     same object instead of duplicating data.
 Offsets are committed to Kafka only AFTER the object was written (at-least-once delivery).
@@ -39,8 +42,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def build_object_key(timestamp_ms: int, partition: int, first_offset: int, last_offset: int) -> str:
-    dt = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
-    return f"{OBJECT_PREFIX}/dt={dt}/p{partition}_{first_offset}-{last_offset}.jsonl"
+    ts = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
+    return f"{OBJECT_PREFIX}/dt={ts:%Y-%m-%d}/hr={ts:%H}/p{partition}_{first_offset}-{last_offset}.jsonl"
 
 
 def to_ndjson(records: list[dict]) -> bytes:

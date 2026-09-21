@@ -163,7 +163,7 @@ flowchart LR
 - **dbt staging** — 1:1 cleaned and typed *views* over `raw`: timestamp parsing, range
   checks, deduplication, drift extraction. Bad rows are **flagged, not dropped** (Section 7).
 - **dbt curated** — dimension and fact *tables* that the business queries.
-- **Spark batch job** — reads raw NDJSON from RustFS for one day partition and computes
+- **Spark batch job** — reads raw NDJSON from RustFS for one day (all its hour partitions) and computes
   `agg_cell_hourly_kpi` (cell × hour network KPIs), writing to `curated` over JDBC. It owns
   the one aggregate that scans *every* event and therefore outgrows row-by-row SQL first.
   Section 4 explains why this is Spark's job and not dbt's.
@@ -206,7 +206,7 @@ Flow: source → CDC stream → raw → staging → curated → serving.
 |---|---|---|---|---|---|
 | Source | Postgres `source.network_events` | Rows inserted by the generator | 1 row = 1 event | `event_id` (PK) | Append-only; source of truth |
 | CDC stream | Kafka `telecom.source.network_events` | One Debezium change event per insert | 1 message = 1 event | `event_id` | Append-only; replayable via consumer offsets |
-| Raw (lake) | RustFS `raw/network_events/dt=YYYY-MM-DD/p<partition>_<first>-<last>.jsonl` | Unmodified Debezium messages, dirty rows included | 1 line = 1 event | `event_id` | Append-only; the offset range in the object key makes re-runs overwrite, not duplicate |
+| Raw (lake) | RustFS `raw/network_events/dt=YYYY-MM-DD/hr=HH/p<partition>_<first>-<last>.jsonl` | Unmodified Debezium messages, dirty rows included | 1 line = 1 event | `event_id` | Append-only; partitioned by UTC **ingestion hour** (a batch belongs to the hour its first message arrived, so event-time filtering happens in staging); the offset range in the object key makes re-runs overwrite, not duplicate |
 | Raw (warehouse) | Postgres `raw.network_events` | Flattened copy of the `after` payload + `_source_object_key`, `_loaded_at` | 1 row = 1 event | `event_id` (PK) | Idempotent load: `INSERT … ON CONFLICT (event_id) DO NOTHING`; already-loaded object keys are skipped |
 | Staging | Postgres `staging` schema (views) | `stg_network_events` (typed, deduplicated, with a `dq_flags` array), `stg_network_events_valid`, `stg_network_events_rejected` | Same as raw | `event_id` | Views recomputed on every `dbt run`; bad rows are flagged and routed, never silently dropped |
 | Curated | Postgres `curated` schema (tables) | Dimensional model + Spark aggregate (below) | See below | See below | Incremental where stated |
@@ -249,7 +249,7 @@ data_sessions, total_volume_mb, avg_throughput_mbps, p95_latency_ms, avg_signal_
   (Debezium/Kafka), (2) batch load + SQL transformation (Airflow + dbt), (3) batch
   distributed aggregation (Spark reading raw files directly from RustFS).
 - **Idempotency and re-runs**
-  - *Consumer:* object keys embed partition and offset range, and the date comes from the
+  - *Consumer:* object keys embed partition and offset range, and the date and hour come from the
     Kafka message timestamp — re-running the same offsets rewrites the same object.
   - *Raw load:* `ON CONFLICT (event_id) DO NOTHING`, plus skipping already-loaded object keys.
   - *dbt:* staging views are pure `SELECT`s; incremental facts use `unique_key = event_id`, so a re-run merges instead of duplicating.

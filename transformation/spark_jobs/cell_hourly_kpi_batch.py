@@ -5,7 +5,7 @@ Ownership split with dbt (see docs/PROJECT_PLAN.md, sections 3 and 5):
   - dbt owns the dimensional model (dim_subscriber, dim_cell_site, fct_voice_call,
     fct_data_session) via SQL against Postgres.
   - Spark owns this one aggregate: it reads the raw NDJSON files directly from RustFS
-    (S3A, one day-partition at a time) and writes cell-level hourly network KPIs
+    (S3A, all hour partitions of one day at a time) and writes cell-level hourly network KPIs
     (call attempts, drop rate, throughput, p95 latency, volume) into Postgres
     `curated` via JDBC. Cell x hour aggregation over every event is the one job that
     outgrows row-by-row SQL first as event volume rises.
@@ -30,7 +30,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--date",
         required=True,
-        help="Day partition to process, YYYY-MM-DD (matches raw/network_events/dt=<date>/ in RustFS).",
+        help="Day partition to process, YYYY-MM-DD (matches raw/network_events/dt=<date>/hr=*/ in RustFS).",
     )
     return parser
 
@@ -38,7 +38,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 def run(date: str) -> None:
     """
     Phase 3 will implement: create a SparkSession with the S3A filesystem pointed at
-    RustFS, read s3a://<raw_bucket>/raw/network_events/dt=<date>/*.jsonl, parse the
+    RustFS, read s3a://<raw_bucket>/raw/network_events/dt=<date>/hr=*/*.jsonl, parse the
     Debezium envelope (`after` payload), aggregate per cell_id x hour, and overwrite
     that day's partition in curated.agg_cell_hourly_kpi via the Postgres JDBC driver.
     """
