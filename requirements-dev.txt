@@ -1,0 +1,10 @@
+# Development / test dependencies. Install with:  pip install -r requirements-dev.txt
+-r requirements.txt
+
+# Testing
+pytest==8.3.3
+PyYAML==6.0.2
+
+# Local dbt (parse/compile/debug from your laptop; Airflow has its own copy in its image)
+dbt-core==1.8.7
+dbt-postgres==1.8.2

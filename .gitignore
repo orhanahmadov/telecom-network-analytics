@@ -1,0 +1,41 @@
+# Environment & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# dbt
+transformation/dbt_telecom/target/
+transformation/dbt_telecom/dbt_packages/
+transformation/dbt_telecom/logs/
+transformation/dbt_telecom/.user.yml
+
+# Airflow
+infra/airflow/logs/
+orchestration/logs/
+
+# Local docker state / data (never commit raw or generated data)
+infra/volumes/
+data/
+*.csv
+*.parquet
+*.jsonl
+*.ndjson
+!tests/**/*.csv
+
+# IDE / OS
+.DS_Store
+.vscode/
+.idea/
