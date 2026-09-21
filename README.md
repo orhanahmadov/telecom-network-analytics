@@ -102,6 +102,7 @@ make register-connector          # register the Debezium connector (idempotent)
 make generate COUNT=50           # write 50 synthetic events into the source Postgres
 make consume BATCH_SIZE=50       # land them in RustFS; Ctrl+C after the first batch
 make dbt-debug                   # dbt (inside Airflow) can connect to the warehouse
+make smoke                       # connector RUNNING, both databases, RustFS and the Kafka topic are wired
 ```
 
 ## Stopping and Restarting
@@ -144,7 +145,8 @@ Without Make, use `docker compose -f infra/docker-compose.yml --env-file .env <c
 ├── config/
 │   └── settings.py                     # single source of truth for all configuration
 ├── scripts/
-│   └── init_env.py                     # generates .env with random secrets from .env.example
+│   ├── init_env.py                     # generates .env with random secrets from .env.example
+│   └── smoke_check.py                  # checks the running stack is wired: connector, DBs, object store, topic
 ├── tests/                              # unit + contract tests (see below)
 ├── .env.example                        # every required variable, documented
 ├── requirements.txt                    # pinned runtime dependencies (host-side tools)

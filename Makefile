@@ -4,7 +4,7 @@ COUNT ?= 1000
 BATCH_SIZE ?= 200
 
 .DEFAULT_GOAL := help
-.PHONY: help init-env venv up down clean ps logs register-connector generate generate-forever consume test dbt-debug
+.PHONY: help init-env venv up down clean ps logs register-connector generate generate-forever consume smoke test dbt-debug
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -47,6 +47,9 @@ generate-forever: ## Keep writing events until Ctrl+C
 
 consume: ## Consume the Kafka topic into RustFS batches (Ctrl+C to stop; make consume BATCH_SIZE=50)
 	PYTHONPATH=. $(PYTHON) -m ingestion.consumer.kafka_to_rustfs --batch-size $(BATCH_SIZE)
+
+smoke: ## Check the pipeline is wired: connector RUNNING, databases, object store, topic (stack must be up)
+	PYTHONPATH=. $(PYTHON) -m scripts.smoke_check
 
 test: ## Run the test suite
 	PYTHONPATH=. $(PYTHON) -m pytest -q
