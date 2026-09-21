@@ -39,7 +39,7 @@ def run(date: str) -> None:
     """
     Phase 3 will implement: create a SparkSession with the S3A filesystem pointed at
     RustFS, read s3a://<raw_bucket>/raw/network_events/dt=<date>/hr=*/*.jsonl, parse the
-    Debezium envelope (`after` payload), aggregate per cell_id x hour, and overwrite
+    flat CDC records (the connector unwraps Debezium's envelope), aggregate per cell_id x hour, and overwrite
     that day's partition in curated.agg_cell_hourly_kpi via the Postgres JDBC driver.
     """
     raise NotImplementedError("Implemented in Phase 3 - Batch Processing & Orchestration.")

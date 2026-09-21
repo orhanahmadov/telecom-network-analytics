@@ -34,3 +34,12 @@ def test_topic_matches_env_example_and_settings():
 def test_decimal_handling_is_not_base64_default():
     connector = register_connector.render_connector(register_connector.CONNECTOR_FILE.read_text(), ENV)
     assert connector["config"]["decimal.handling.mode"] in {"double", "string"}
+
+
+def test_connector_unwraps_the_debezium_envelope():
+    # Kafka (and therefore the raw lake) must carry flat rows, not before/after/source envelopes.
+    config = register_connector.render_connector(register_connector.CONNECTOR_FILE.read_text(), ENV)["config"]
+    assert config["transforms"] == "unwrap"
+    assert config["transforms.unwrap.type"] == "io.debezium.transforms.ExtractNewRecordState"
+    # the extra field lands as __source_ts_ms and is stored in raw.network_events._cdc_source_ts_ms
+    assert config["transforms.unwrap.add.fields"] == "source.ts_ms"

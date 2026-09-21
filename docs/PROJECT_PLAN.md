@@ -41,7 +41,7 @@ usage per subscriber end-to-end without modelling the full operator estate.
 | Origin | A **self-written Python synthetic generator** (`ingestion/producer/generator.py`) that inserts rows into a source Postgres OLTP table (`ingestion/producer/db_writer.py`). Chosen over a public dataset because no open dataset exposes per-cell quality *and* per-subscriber usage together, and because volume, drift and dirtiness must be controllable and reproducible for grading. |
 | Population | Fixed, seeded population: 2,000 subscribers (plans: ~60% prepaid, 30% postpaid, 10% corporate) across 60 cell sites in 8 regions (radio tech mix 3G 20% / 4G 60% / 5G 20%). About 10% of cells are secretly **degraded** (a hidden ground truth: higher drop rate, lower throughput, higher latency, weaker signal). The flag is never written into events — the analytics must rediscover it. |
 | Format | Relational rows in `source.network_events` (Postgres). Debezium turns each insert into a JSON message on Kafka; the consumer lands those messages unchanged as NDJSON. |
-| Volume estimate | `GENERATOR_EVENTS_PER_SECOND` (default 5) ≈ 432,000 events/day. At ≈ 0.9 KB per Debezium JSON envelope that is ≈ 0.4 GB/day of raw NDJSON. *(Estimate — measured for real in Phase 1.)* |
+| Volume estimate | `GENERATOR_EVENTS_PER_SECOND` (default 5) ≈ 432,000 events/day. A flat CDC record measures ≈ 0.57 KB as JSON (sampled from the generator), i.e. ≈ 0.25 GB/day of raw NDJSON. *(Estimate — measured for real in Phase 1.)* |
 | Update frequency | Continuous at the source (CDC, streaming). Landed in RustFS in micro-batches (default: every 200 messages). Loaded to the warehouse and transformed in hourly batches (from Phase 3). |
 | Event mix | ~50% data sessions, ~35% voice calls, ~15% SMS. |
 
@@ -90,6 +90,9 @@ JSON output that staging/loading must handle):
 - `TIMESTAMPTZ` arrives as an ISO-8601 string in UTC.
 - `NUMERIC` would arrive as a base64-encoded structure by default; the connector sets
   `decimal.handling.mode=double` to avoid that.
+- The connector applies Debezium's `ExtractNewRecordState` ("unwrap") transform, so Kafka carries
+  the inserted row itself instead of a `before` / `after` / `source` envelope; the source change
+  timestamp is added as `__source_ts_ms` and kept in `raw.network_events._cdc_source_ts_ms`.
 - Delivery is at-least-once, so duplicates are possible after a restart.
 
 ## 3. Target Architecture
@@ -206,8 +209,8 @@ Flow: source → CDC stream → raw → staging → curated → serving.
 |---|---|---|---|---|---|
 | Source | Postgres `source.network_events` | Rows inserted by the generator | 1 row = 1 event | `event_id` (PK) | Append-only; source of truth |
 | CDC stream | Kafka `telecom.source.network_events` | One Debezium change event per insert | 1 message = 1 event | `event_id` | Append-only; replayable via consumer offsets |
-| Raw (lake) | RustFS `raw/network_events/dt=YYYY-MM-DD/hr=HH/p<partition>_<first>-<last>.jsonl` | Unmodified Debezium messages, dirty rows included | 1 line = 1 event | `event_id` | Append-only; partitioned by UTC **ingestion hour** (a batch belongs to the hour its first message arrived, so event-time filtering happens in staging); the offset range in the object key makes re-runs overwrite, not duplicate |
-| Raw (warehouse) | Postgres `raw.network_events` | Flattened copy of the `after` payload + `_source_object_key`, `_loaded_at` | 1 row = 1 event | `event_id` (PK) | Idempotent load: `INSERT … ON CONFLICT (event_id) DO NOTHING`; already-loaded object keys are skipped |
+| Raw (lake) | RustFS `raw/network_events/dt=YYYY-MM-DD/hr=HH/p<partition>_<first>-<last>.jsonl` | Unmodified flat CDC records (one row per event, plus `__source_ts_ms`), dirty rows included | 1 line = 1 event | `event_id` | Append-only; partitioned by UTC **ingestion hour** (a batch belongs to the hour its first message arrived, so event-time filtering happens in staging); the offset range in the object key makes re-runs overwrite, not duplicate |
+| Raw (warehouse) | Postgres `raw.network_events` | Copy of the flat CDC record + `_source_object_key`, `_cdc_source_ts_ms`, `_loaded_at` | 1 row = 1 event | `event_id` (PK) | Idempotent load: `INSERT … ON CONFLICT (event_id) DO NOTHING`; already-loaded object keys are skipped |
 | Staging | Postgres `staging` schema (views) | `stg_network_events` (typed, deduplicated, with a `dq_flags` array), `stg_network_events_valid`, `stg_network_events_rejected` | Same as raw | `event_id` | Views recomputed on every `dbt run`; bad rows are flagged and routed, never silently dropped |
 | Curated | Postgres `curated` schema (tables) | Dimensional model + Spark aggregate (below) | See below | See below | Incremental where stated |
 | Serving | Postgres views on `curated` | `vw_cell_quality_ranking`, `vw_subscriber_churn_signals` | Business-question shaped | — | Plain views, always current |

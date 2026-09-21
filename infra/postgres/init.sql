@@ -35,5 +35,6 @@ CREATE TABLE IF NOT EXISTS raw.network_events (
     extra                       JSONB NOT NULL DEFAULT '{}'::jsonb,
     -- load metadata
     _source_object_key          TEXT,
+    _cdc_source_ts_ms           BIGINT,   -- source-side change time (ms) reported by Debezium; lets Phase 4 measure end-to-end latency
     _loaded_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
 );

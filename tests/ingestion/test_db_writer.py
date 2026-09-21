@@ -25,7 +25,7 @@ def test_raw_table_mirrors_source_table():
     src = set(_table_columns(ROOT / "infra/postgres-source/init.sql", "source.network_events")) - {"inserted_at"}
     raw = set(_table_columns(ROOT / "infra/postgres/init.sql", "raw.network_events"))
     assert src <= raw
-    assert raw - src == {"_source_object_key", "_loaded_at"}
+    assert raw - src == {"_source_object_key", "_cdc_source_ts_ms", "_loaded_at"}
 
 
 def test_to_row_produces_every_insert_parameter():
