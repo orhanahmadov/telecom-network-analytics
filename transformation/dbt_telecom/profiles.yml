@@ -1,0 +1,17 @@
+# Safe to commit: every value is read from an environment variable at runtime
+# via env_var(); no secret literal appears in this file.
+# From your laptop:   export DBT_PROFILES_DIR=$(pwd)/transformation/dbt_telecom
+# Inside Airflow the container env already provides POSTGRES_* (internal hostnames).
+
+dbt_telecom:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('POSTGRES_HOST', 'localhost') }}"
+      port: "{{ env_var('POSTGRES_PORT', '5432') | as_number }}"
+      user: "{{ env_var('POSTGRES_USER') }}"
+      password: "{{ env_var('POSTGRES_PASSWORD') }}"
+      dbname: "{{ env_var('POSTGRES_DB') }}"
+      schema: staging
+      threads: 4

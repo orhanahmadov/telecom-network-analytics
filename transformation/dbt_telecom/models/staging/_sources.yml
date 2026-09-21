@@ -1,0 +1,16 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    description: >
+      As-landed data loaded from the RustFS raw bucket by the Airflow
+      "load_raw_to_postgres" task (Phase 1). The table itself is created by
+      infra/postgres/init.sql, so this source compiles and `dbt run` works from Phase 0
+      (it just reads zero rows until Phase 1 loads data).
+    tables:
+      - name: network_events
+        description: One row per raw network event (voice call / data session / SMS), loaded as-is - no cleaning.
+        loaded_at_field: _loaded_at
+        freshness:
+          warn_after: {count: 2, period: hour}

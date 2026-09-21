@@ -1,0 +1,7 @@
+version: 2
+
+models:
+  - name: stg_network_events
+    description: >
+      Phase 0 passthrough of raw.network_events. Cleaning, casts, drift handling
+      and column-level tests land in Phase 2 (see docs/PROJECT_PLAN.md, section 8).
