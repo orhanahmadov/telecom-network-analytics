@@ -1,0 +1,24 @@
+{
+  "name": "telecom-postgres-source-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "database.hostname": "postgres-source",
+    "database.port": "5432",
+    "database.user": "${SOURCE_POSTGRES_USER}",
+    "database.password": "${SOURCE_POSTGRES_PASSWORD}",
+    "database.dbname": "${SOURCE_POSTGRES_DB}",
+    "topic.prefix": "telecom",
+    "schema.include.list": "source",
+    "table.include.list": "source.network_events",
+    "plugin.name": "pgoutput",
+    "slot.name": "telecom_debezium_slot",
+    "publication.autocreate.mode": "filtered",
+    "decimal.handling.mode": "double",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "false",
+    "value.converter.schemas.enable": "false",
+    "topic.creation.default.partitions": "1",
+    "topic.creation.default.replication.factor": "1"
+  }
+}
