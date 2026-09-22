@@ -208,3 +208,13 @@ until Phase 2 adds models to that folder.
   keep the *old* passwords. Run `make clean` first, then `make init-env` and `make up`.
 - **Docker runs out of memory:** raise Docker's memory limit to at least 6 GB, or stop
   `kafka-ui` (it is not part of the data path).
+
+
+## Acknowledgements
+
+The initial repository layout and the Docker Compose service set were modelled on the
+example project `gaming-data-pipeline-e2e`, used as a structural reference for how the
+assignment's required layout (ingestion / transformation / orchestration / config / infra
+/ tests / docs) could be organized. Ingestion, the raw-lake partitioning, the Debezium
+envelope handling, the data model, the project plan, the tests and the `make smoke`
+tooling were written and adapted for this telecom use case.
