@@ -218,3 +218,5 @@ assignment's required layout (ingestion / transformation / orchestration / confi
 / tests / docs) could be organized. Ingestion, the raw-lake partitioning, the Debezium
 envelope handling, the data model, the project plan, the tests and the `make smoke`
 tooling were written and adapted for this telecom use case.
+test
+test
