@@ -4,11 +4,13 @@
 -- Layers (see docs/PROJECT_PLAN.md, section 5):
 --   raw      - as-landed data loaded from RustFS, no cleaning
 --   staging  - cleaned/typed 1:1 views (dbt)
---   curated  - dimensional model + aggregates for serving (dbt + Spark)
+--   curated  - dimensional model + aggregates (dbt + Spark)
+--   serving  - business-question-shaped views on curated (dbt), read by any SQL client
 
 CREATE SCHEMA IF NOT EXISTS raw;
 CREATE SCHEMA IF NOT EXISTS staging;
 CREATE SCHEMA IF NOT EXISTS curated;
+CREATE SCHEMA IF NOT EXISTS serving;
 
 -- The raw landing table is created here (not by dbt) because it is a LOAD target
 -- owned by the Airflow load task in Phase 1, i.e. a contract between ingestion and

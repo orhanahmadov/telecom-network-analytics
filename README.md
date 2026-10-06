@@ -127,7 +127,7 @@ Without Make, use `docker compose -f infra/docker-compose.yml --env-file .env <c
 ├── infra/
 │   ├── docker-compose.yml              # every service, pinned images, healthchecks, named volumes
 │   ├── airflow/Dockerfile              # Airflow image + dbt in an isolated virtualenv
-│   ├── postgres/init.sql               # warehouse: raw/staging/curated schemas + raw.network_events
+│   ├── postgres/init.sql               # warehouse: raw/staging/curated/serving schemas + raw.network_events
 │   ├── postgres-source/init.sql        # source: source.network_events table watched by Debezium
 │   └── kafka-connect/
 │       ├── postgres-source-connector.json   # Debezium connector configuration
@@ -144,7 +144,7 @@ Without Make, use `docker compose -f infra/docker-compose.yml --env-file .env <c
 ├── orchestration/
 │   └── dags/telecom_pipeline_dag.py    # Airflow DAG (load_raw_to_postgres -> dbt staging/curated + Spark)
 ├── transformation/
-│   ├── dbt_telecom/                    # dbt project: real staging (DQ flags) + curated dimensional model
+│   ├── dbt_telecom/                    # dbt project: staging (DQ flags) + curated model + serving views
 │   └── spark_jobs/
 │       └── cell_hourly_kpi_batch.py    # Spark job skeleton: RustFS -> agg_cell_hourly_kpi
 ├── config/
@@ -167,7 +167,7 @@ configuration, `tests` = automated checks, `docs` = planning and design.
 
 ### Tests
 
-`make test` runs 70+ tests without Docker. Besides unit tests they include **contract
+`make test` runs 78+ tests without Docker. Besides unit tests they include **contract
 tests** that keep the pieces consistent: every `${VAR}` in `docker-compose.yml` and every
 variable read by `config/settings.py` must appear in `.env.example`; the columns the
 writer inserts must match the source DDL; the raw table must mirror the source table;
@@ -204,8 +204,9 @@ cannot be updated directly (including by the repository owner) — see
   metadata Postgres, Kafka (KRaft), Kafka Connect (Debezium), Kafka UI, RustFS, Spark
   (master + worker) and Airflow (webserver + scheduler), with pinned image versions,
   healthchecks and persistent named volumes.
-- `raw` / `staging` / `curated` schemas and the `raw.network_events` table are created in
-  the warehouse, and `source.network_events` in the source database, on first boot.
+- `raw` / `staging` / `curated` / `serving` schemas and the `raw.network_events` table are
+  created in the warehouse, and `source.network_events` in the source database, on first
+  boot.
 - Ingestion: a synthetic generator (stable subscriber and cell population, hidden degraded
   cells, configurable dirty-record and schema-drift rates), a Postgres writer CLI, and a
   Kafka-to-RustFS consumer CLI — runnable and unit-tested. The Debezium connector is
@@ -220,6 +221,13 @@ cannot be updated directly (including by the repository owner) — see
   (`dim_cell_site`, `dim_subscriber` SCD2, `fct_voice_call`, `fct_data_session`), covered
   by 15 dbt data tests (not_null, unique, accepted_values, relationships). A Spark job
   skeleton with a working CLI is still a placeholder (Phase 3).
+- Serving: two `serving` views on top of `curated` — `vw_cell_quality_ranking` (answers
+  the Network Operations question: cells ranked by a composite drop-rate/latency/
+  throughput score over a trailing 7-day window) and `vw_subscriber_churn_signals`
+  (answers the Retention question: subscribers flagged on a usage drop plus
+  poor-experience events over a trailing 14-day window), covered by 5 more dbt data
+  tests. Heuristic thresholds and weights are initial assumptions — see
+  `docs/decisions/0002-serving-layer-heuristics.md`.
 - One-command secret generation (`make init-env`), pinned dependencies, and a CI gate
   (lint, compile-check, compose validation) on every pull request.
 - Architecture decision records for significant design choices live in `docs/decisions/`.
@@ -227,9 +235,9 @@ cannot be updated directly (including by the repository owner) — see
 **Not implemented yet (by design; scheduled in `docs/PROJECT_PLAN.md`, section 8)**
 
 The Spark aggregation and the hourly schedule (Phase 3), data quality checks wired into
-the DAG as a blocking gate (Phase 4), serving views (Phase 5), and the branching/CI
-workflow (Phase 6 — branch protection and PR-based CI are already in place ahead of
-schedule; what remains there is the rest of that phase's documentation pass).
+the DAG as a blocking gate (Phase 4), and the branching/CI workflow (Phase 6 — branch
+protection and PR-based CI are already in place ahead of schedule; what remains there is
+the rest of that phase's documentation pass).
 
 The generator does not yet simulate subscriber plan migrations, so `dim_subscriber`'s
 SCD Type 2 logic is implemented and tested but currently produces exactly one version per
