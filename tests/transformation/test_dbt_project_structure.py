@@ -61,6 +61,30 @@ def test_adr_for_dim_subscriber_scd2_exists():
     assert any(p.name.endswith("derive-dim-subscriber-scd2-from-event-stream.md") for p in adr_dir.glob("*.md"))
 
 
+def test_serving_views_exist():
+    serving = DBT_PROJECT_DIR / "models" / "serving"
+    assert (serving / "vw_cell_quality_ranking.sql").exists()
+    assert (serving / "vw_subscriber_churn_signals.sql").exists()
+
+
+def test_serving_schema_config_is_view():
+    content = (DBT_PROJECT_DIR / "dbt_project.yml").read_text()
+    assert "serving" in content
+    assert "+schema: serving" in content
+
+
+def test_serving_schema_yml_declares_uniqueness_tests():
+    schema = yaml.safe_load((DBT_PROJECT_DIR / "models" / "serving" / "schema.yml").read_text())
+    models_by_name = {m["name"]: m for m in schema["models"]}
+    assert "vw_cell_quality_ranking" in models_by_name
+    assert "vw_subscriber_churn_signals" in models_by_name
+
+
+def test_adr_for_serving_heuristics_exists():
+    adr_dir = ROOT / "docs" / "decisions"
+    assert any(p.name.endswith("serving-layer-heuristics.md") for p in adr_dir.glob("*.md"))
+
+
 def test_schema_name_is_not_prefixed_with_the_target_schema():
     # Found live: dbt's default generate_schema_name macro prefixes a model's custom
     # schema with the profile's base schema (staging_staging / staging_curated instead of

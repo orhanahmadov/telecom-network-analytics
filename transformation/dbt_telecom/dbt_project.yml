@@ -20,3 +20,6 @@ models:
     curated:
       +schema: curated
       +materialized: table
+    serving:
+      +schema: serving
+      +materialized: view

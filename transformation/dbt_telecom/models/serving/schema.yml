@@ -1,0 +1,29 @@
+version: 2
+
+models:
+  - name: vw_cell_quality_ranking
+    description: >
+      Cells ranked by a composite quality score (drop rate, latency, throughput) over
+      the trailing 7 days. Answers the Network Operations question (docs/PROJECT_PLAN.md,
+      section 1) in a single query. Scoring weights are initial assumptions - see
+      docs/decisions/0002-serving-layer-heuristics.md.
+    columns:
+      - name: cell_id
+        data_tests:
+          - not_null
+          - unique
+      - name: quality_rank
+        data_tests:
+          - not_null
+
+  - name: vw_subscriber_churn_signals
+    description: >
+      Subscribers flagged for early churn risk (a usage drop plus poor-experience
+      events). Answers the Retention question (docs/PROJECT_PLAN.md, section 1) in a
+      single query. Heuristic thresholds are initial assumptions - see
+      docs/decisions/0002-serving-layer-heuristics.md.
+    columns:
+      - name: subscriber_id
+        data_tests:
+          - not_null
+          - unique
