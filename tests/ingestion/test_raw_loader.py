@@ -33,6 +33,34 @@ def test_record_to_row_maps_known_columns_and_debezium_timestamp():
     assert json.loads(row["extra"]) == {}
 
 
+def test_record_to_row_decodes_debezium_epoch_day_dates():
+    # Confirmed live: with schemas.enable=false, Debezium's DATE logical type (epoch days
+    # since 1970-01-01) comes through as a raw integer, not an ISO string.
+    record = {column: None for column in raw_loader.RECORD_COLUMNS}
+    record["subscriber_activation_date"] = 19936  # 2024-08-01
+
+    row = raw_loader.record_to_row(record, object_key="k")
+
+    assert row["subscriber_activation_date"] == "2024-08-01"
+
+
+def test_record_to_row_leaves_an_already_decoded_date_string_untouched():
+    record = {column: None for column in raw_loader.RECORD_COLUMNS}
+    record["subscriber_activation_date"] = "2024-08-01"
+
+    row = raw_loader.record_to_row(record, object_key="k")
+
+    assert row["subscriber_activation_date"] == "2024-08-01"
+
+
+def test_record_to_row_leaves_a_null_activation_date_as_none():
+    record = {column: None for column in raw_loader.RECORD_COLUMNS}
+
+    row = raw_loader.record_to_row(record, object_key="k")
+
+    assert row["subscriber_activation_date"] is None
+
+
 def test_record_to_row_routes_undeclared_fields_to_extra_and_drops_the_source_timestamp():
     record = {column: None for column in raw_loader.RECORD_COLUMNS}
     record["__source_ts_ms"] = 123

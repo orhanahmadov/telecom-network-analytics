@@ -26,8 +26,18 @@ import argparse
 import json
 import sys
 from dataclasses import dataclass
+from datetime import date, timedelta
 
 from config.settings import settings
+
+_EPOCH = date(1970, 1, 1)
+
+# Debezium's logical date type (io.debezium.time.Date) is epoch-days, not an ISO string.
+# With schemas disabled (value.converter.schemas.enable=false, see
+# infra/kafka-connect/postgres-source-connector.json) the JSON converter writes that raw
+# integer straight through - there's no schema for it to format against. Confirmed live: a
+# `DATE` source column lands in the flat CDC record as e.g. 19936, not "2024-07-01".
+_EPOCH_DAY_FIELDS = ("subscriber_activation_date",)
 
 OBJECT_PREFIX = "raw/network_events"
 
@@ -107,11 +117,20 @@ def list_date_objects(s3_client, bucket: str, date: str) -> list[str]:
     return sorted(keys)
 
 
+def _decode_epoch_day(value):
+    """Debezium's epoch-days integer -> an ISO date string Postgres's DATE column accepts."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return value  # already a string (or None) - nothing to decode
+    return (_EPOCH + timedelta(days=value)).isoformat()
+
+
 def record_to_row(record: dict, object_key: str) -> dict:
     """Map one flat CDC record (as landed in RustFS) to a raw.network_events row dict."""
     known = set(RECORD_COLUMNS)
     extra = {k: v for k, v in record.items() if k not in known and k != SOURCE_TS_MS_FIELD}
     row = {column: record.get(column) for column in RECORD_COLUMNS}
+    for field in _EPOCH_DAY_FIELDS:
+        row[field] = _decode_epoch_day(row[field])
     row["extra"] = json.dumps(extra)
     row["_source_object_key"] = object_key
     row["_cdc_source_ts_ms"] = record.get(SOURCE_TS_MS_FIELD)
