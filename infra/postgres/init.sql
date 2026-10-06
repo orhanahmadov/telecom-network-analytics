@@ -38,3 +38,12 @@ CREATE TABLE IF NOT EXISTS raw.network_events (
     _cdc_source_ts_ms           BIGINT,   -- source-side change time (ms) reported by Debezium; lets Phase 4 measure end-to-end latency
     _loaded_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Object-level idempotency ledger for the Phase 1 loader (ingestion/loader/raw_loader.py).
+-- A row here means every record in that RustFS object has already been committed to
+-- raw.network_events; the loader skips any key already present. event_id's ON CONFLICT
+-- DO NOTHING (above) is the second, row-level layer of the same guarantee.
+CREATE TABLE IF NOT EXISTS raw._loaded_objects (
+    object_key   TEXT PRIMARY KEY,
+    loaded_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);

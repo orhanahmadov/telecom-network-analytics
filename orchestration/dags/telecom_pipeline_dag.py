@@ -11,9 +11,12 @@ The generator, Debezium and the Kafka consumer are NOT orchestrated here: events
 generator -> source Postgres -> Debezium -> Kafka -> consumer -> RustFS continuously
 and independently. This DAG owns only the batch steps from RustFS onward.
 
-Task bodies for load/spark are placeholders on purpose - no business logic ships in
-Phase 0. The DAG is created paused (AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION) so it
-never runs unattended before its logic exists. See docs/PROJECT_PLAN.md, section 8.
+`load_raw_to_postgres` is parameterized by the DAG run's logical date: it loads every
+RustFS object under raw/network_events/dt=<logical_date>/hr=*/ (see
+ingestion/loader/raw_loader.py for the idempotency guarantees). The dbt and Spark steps
+are still placeholders - no business logic ships for them yet. The DAG is created paused
+(AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION) so it never runs unattended before all of its
+logic exists. See docs/PROJECT_PLAN.md, section 8.
 """
 
 from __future__ import annotations
@@ -33,9 +36,17 @@ default_args = {
 }
 
 
-def load_raw_to_postgres(**_context) -> None:
-    """Phase 1: list new objects under raw/network_events/ in RustFS and load them into raw.network_events."""
-    raise NotImplementedError("Implemented in Phase 1 - Ingestion & Raw Storage.")
+def load_raw_to_postgres(logical_date, **_context) -> None:
+    """Load every RustFS object for this DAG run's logical date into raw.network_events."""
+    from ingestion.loader.raw_loader import run as load_raw_objects
+
+    date = logical_date.strftime("%Y-%m-%d")
+    result = load_raw_objects(date)
+    print(
+        f"[load_raw_to_postgres] date={date} objects_seen={result.objects_seen} "
+        f"objects_loaded={result.objects_loaded} objects_skipped={result.objects_skipped} "
+        f"rows_inserted={result.rows_inserted}"
+    )
 
 
 def spark_batch_cell_hourly_kpi(**_context) -> None:

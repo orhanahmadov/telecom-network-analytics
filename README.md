@@ -136,10 +136,12 @@ Without Make, use `docker compose -f infra/docker-compose.yml --env-file .env <c
 │   ├── producer/
 │   │   ├── generator.py                # synthetic events: stable population, degraded cells, dirty data, drift
 │   │   └── db_writer.py                # CLI: writes generated events into source.network_events
-│   └── consumer/
-│       └── kafka_to_rustfs.py          # CLI: consumes the CDC topic, lands NDJSON batches in RustFS
+│   ├── consumer/
+│   │   └── kafka_to_rustfs.py          # CLI: consumes the CDC topic, lands NDJSON batches in RustFS
+│   └── loader/
+│       └── raw_loader.py               # CLI: loads one day's RustFS objects into raw.network_events
 ├── orchestration/
-│   └── dags/telecom_pipeline_dag.py    # Airflow DAG skeleton (load -> dbt staging/curated + Spark)
+│   └── dags/telecom_pipeline_dag.py    # Airflow DAG (load_raw_to_postgres -> dbt staging/curated + Spark)
 ├── transformation/
 │   ├── dbt_telecom/                    # dbt project: staging passthrough model; curated layer planned
 │   └── spark_jobs/
@@ -203,21 +205,25 @@ cannot be updated directly (including by the repository owner) — see
   healthchecks and persistent named volumes.
 - `raw` / `staging` / `curated` schemas and the `raw.network_events` table are created in
   the warehouse, and `source.network_events` in the source database, on first boot.
-- Ingestion skeleton: a synthetic generator (stable subscriber and cell population,
-  hidden degraded cells, configurable dirty-record and schema-drift rates), a Postgres
-  writer CLI, and a Kafka-to-RustFS consumer CLI — runnable and unit-tested. The Debezium
-  connector is registered with one command (`make register-connector`).
+- Ingestion: a synthetic generator (stable subscriber and cell population, hidden degraded
+  cells, configurable dirty-record and schema-drift rates), a Postgres writer CLI, and a
+  Kafka-to-RustFS consumer CLI — runnable and unit-tested. The Debezium connector is
+  registered with one command (`make register-connector`).
+- Raw loading: `ingestion/loader/raw_loader.py` loads one logical date's RustFS objects
+  into `raw.network_events`, idempotently at both the object level (`raw._loaded_objects`)
+  and the row level (`ON CONFLICT (event_id) DO NOTHING`), wired into the DAG's
+  `load_raw_to_postgres` task.
 - Orchestration skeleton: one Airflow DAG with the intended task graph, created paused.
 - Transformation skeleton: a dbt project with a compilable staging passthrough model, and
   a Spark job skeleton with a working CLI.
-- One-command secret generation (`make init-env`) and pinned dependencies.
+- One-command secret generation (`make init-env`), pinned dependencies, and a CI gate
+  (lint, compile-check, compose validation) on every pull request.
 
 **Not implemented yet (by design; scheduled in `docs/PROJECT_PLAN.md`, section 8)**
 
-Real raw-to-Postgres loading (Phase 1), cleaned staging models and the curated
-dimensional model (Phase 2), the Spark aggregation and the hourly schedule (Phase 3), data
-quality checks wired into the DAG (Phase 4), serving views (Phase 5), and the
-branching/CI workflow (Phase 6).
+Cleaned staging models and the curated dimensional model (Phase 2), the Spark aggregation
+and the hourly schedule (Phase 3), data quality checks wired into the DAG (Phase 4),
+serving views (Phase 5), and the branching/CI workflow (Phase 6).
 
 `dbt parse` prints one warning about the unused `curated` configuration path — expected
 until Phase 2 adds models to that folder.
@@ -231,6 +237,9 @@ until Phase 2 adds models to that folder.
   ownership; run `make clean` and `make up` to recreate it.
 - **`make up` after regenerating `.env` fails on Postgres login:** the existing volumes
   keep the *old* passwords. Run `make clean` first, then `make init-env` and `make up`.
+- **`raw._loaded_objects does not exist` (or any other new warehouse table/column):**
+  `infra/postgres/init.sql` only runs once, on an empty volume. Run `make clean && make up`
+  to pick up a schema change made after your first `make up`.
 - **Docker runs out of memory:** raise Docker's memory limit to at least 6 GB, or stop
   `kafka-ui` (it is not part of the data path).
 
