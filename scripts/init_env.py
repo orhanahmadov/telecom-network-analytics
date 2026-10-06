@@ -8,6 +8,7 @@ Standard library only, so it runs before any virtualenv exists.
 Note: regenerating secrets after the stack has been started once will not match the
 passwords stored in the existing Docker volumes - use `make clean` first if you do.
 """
+
 from __future__ import annotations
 
 import argparse

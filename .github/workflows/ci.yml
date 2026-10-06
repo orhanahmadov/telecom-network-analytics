@@ -1,0 +1,56 @@
+# Phase 1 CI gate (assignment section 2.3.i). Runs on every pull request and on main.
+#
+# Three independent checks, each a separate job so a failure in one doesn't hide the others:
+#   lint-and-format   - ruff check + ruff format --check (no changes made, just verified)
+#   compile-check     - byte-compiles every pipeline module (catches syntax/import errors)
+#   compose-validate  - `docker compose config` against infra/docker-compose.yml
+#
+# Every job uses `make venv` (same as a human contributor would) so CI and local runs use
+# the exact same commands - see README, "Continuous Integration".
+#
+# Running the full `make smoke` integration test here is explicitly optional for Phase 1
+# (assignment section 2.3.i) and is not included: it needs the whole stack (Kafka, Debezium,
+# Spark, Airflow) up and healthy, which does not fit a lightweight PR-gate runner.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  lint-and-format:
+    name: Lint & format (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: make venv
+      - run: make lint
+      - run: make format-check
+
+  compile-check:
+    name: Compile check + test suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: make venv
+      - run: make compile-check
+      - name: Run the test suite
+        # Not the Phase 1 "smoke test" (that needs live services via `make smoke`) - this is
+        # the offline unit/contract suite from Phase 0, kept green as a cheap extra signal.
+        run: make test
+
+  compose-validate:
+    name: Validate docker-compose.yml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: make init-env
+      - run: make compose-validate

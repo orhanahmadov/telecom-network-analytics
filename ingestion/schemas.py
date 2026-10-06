@@ -7,6 +7,7 @@ as they would appear in probe / CDR-style records. Phase 0 only needs these shap
 to exist so the producer and consumer skeletons have something concrete to import;
 no transformation logic lives here.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

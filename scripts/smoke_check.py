@@ -12,6 +12,7 @@ store answers with the credentials in .env. This script checks exactly those thi
 Usage (stack must be up):
     make smoke
 """
+
 from __future__ import annotations
 
 import json
@@ -55,7 +56,9 @@ def check_source_db() -> Result:
     import psycopg2
 
     cfg = settings.source_postgres
-    with psycopg2.connect(host=cfg.host, port=cfg.port, user=cfg.user, password=cfg.password, dbname=cfg.db, connect_timeout=5) as conn:
+    with psycopg2.connect(
+        host=cfg.host, port=cfg.port, user=cfg.user, password=cfg.password, dbname=cfg.db, connect_timeout=5
+    ) as conn:
         with conn.cursor() as cur:
             cur.execute("select count(*) from source.network_events")
             return OK, f"source.network_events reachable, {cur.fetchone()[0]} row(s)"
@@ -65,9 +68,13 @@ def check_warehouse() -> Result:
     import psycopg2
 
     cfg = settings.postgres
-    with psycopg2.connect(host=cfg.host, port=cfg.port, user=cfg.user, password=cfg.password, dbname=cfg.db, connect_timeout=5) as conn:
+    with psycopg2.connect(
+        host=cfg.host, port=cfg.port, user=cfg.user, password=cfg.password, dbname=cfg.db, connect_timeout=5
+    ) as conn:
         with conn.cursor() as cur:
-            cur.execute("select count(*) from information_schema.schemata where schema_name in ('raw', 'staging', 'curated')")
+            cur.execute(
+                "select count(*) from information_schema.schemata where schema_name in ('raw', 'staging', 'curated')"
+            )
             schemas = cur.fetchone()[0]
             cur.execute("select to_regclass('raw.network_events') is not null")
             table = cur.fetchone()[0]
@@ -118,7 +125,10 @@ def run_checks(checks: dict[str, Callable[[], Result]]) -> tuple[list[tuple[str,
         try:
             status, detail = check()
         except Exception as exc:  # noqa: BLE001 - any error means "not reachable / not wired"
-            status, detail = FAIL, f"{type(exc).__name__}: {' '.join(str(exc).split())}"  # one line, even for multi-line driver errors
+            status, detail = (
+                FAIL,
+                f"{type(exc).__name__}: {' '.join(str(exc).split())}",
+            )  # one line, even for multi-line driver errors
         rows.append((name, status, detail))
     return rows, 1 if any(status == FAIL for _, status, _ in rows) else 0
 

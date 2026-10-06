@@ -6,6 +6,7 @@ full list and safe sample values). No component should read os.environ
 directly outside this module - import `settings` instead so there is a
 single source of truth for configuration.
 """
+
 from __future__ import annotations
 
 import os

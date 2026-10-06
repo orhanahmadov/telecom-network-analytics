@@ -44,5 +44,7 @@ def test_connector_name_matches_the_connector_config():
     import json
     from pathlib import Path
 
-    config = json.loads((Path(__file__).resolve().parents[2] / "infra/kafka-connect/postgres-source-connector.json").read_text())
+    config = json.loads(
+        (Path(__file__).resolve().parents[2] / "infra/kafka-connect/postgres-source-connector.json").read_text()
+    )
     assert config["name"] == sc.CONNECTOR_NAME

@@ -15,6 +15,7 @@ Task bodies for load/spark are placeholders on purpose - no business logic ships
 Phase 0. The DAG is created paused (AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION) so it
 never runs unattended before its logic exists. See docs/PROJECT_PLAN.md, section 8.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -51,7 +52,6 @@ with DAG(
     default_args=default_args,
     tags=["telecom", "phase-0-skeleton"],
 ) as dag:
-
     load_raw = PythonOperator(
         task_id="load_raw_to_postgres",
         python_callable=load_raw_to_postgres,

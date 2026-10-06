@@ -1,4 +1,5 @@
 """Static checks on the infrastructure definition (no Docker required)."""
+
 import re
 import subprocess
 from pathlib import Path
@@ -74,7 +75,9 @@ def test_source_postgres_has_logical_replication_enabled(compose):
 def test_env_example_holds_no_real_secrets():
     for line in ENV_EXAMPLE.read_text().splitlines():
         if re.match(r"^[A-Z_]*(PASSWORD|SECRET|KEY)[A-Z_]*=", line):
-            assert line.split("=", 1)[1] in {"CHANGE_ME", "admin"} or line.startswith(("KAFKA_", "RUSTFS_ENDPOINT")), line
+            assert line.split("=", 1)[1] in {"CHANGE_ME", "admin"} or line.startswith(("KAFKA_", "RUSTFS_ENDPOINT")), (
+                line
+            )
 
 
 def test_env_file_is_not_tracked_by_git():

@@ -19,6 +19,7 @@ Usage:
     python -m ingestion.consumer.kafka_to_rustfs --help
     python -m ingestion.consumer.kafka_to_rustfs --batch-size 500 --max-batches 1
 """
+
 from __future__ import annotations
 
 import argparse
