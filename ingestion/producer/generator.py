@@ -18,6 +18,7 @@ Two deliberate impurities give downstream data-quality logic real work:
 
 Phase 0 only requires the generator to run and emit well-formed dicts.
 """
+
 from __future__ import annotations
 
 import random
@@ -115,7 +116,9 @@ def _fill_data(event: NetworkEvent) -> None:
     event.duration_sec = min(7200, max(5, int(random.expovariate(1 / 300))))
     event.data_volume_mb = round(random.lognormvariate(3.0, 1.2), 2)
     event.avg_throughput_mbps = round(_TECH_THROUGHPUT_MBPS[tech] * quality * random.lognormvariate(0, 0.4), 2)
-    event.latency_ms = round(_TECH_LATENCY_MS[tech] * (2.5 if event.cell.degraded else 1.0) * random.lognormvariate(0, 0.25), 1)
+    event.latency_ms = round(
+        _TECH_LATENCY_MS[tech] * (2.5 if event.cell.degraded else 1.0) * random.lognormvariate(0, 0.25), 1
+    )
 
 
 def _apply_dirtiness(event: NetworkEvent) -> NetworkEvent:

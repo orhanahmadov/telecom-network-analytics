@@ -9,6 +9,7 @@ Usage (stack must be up and kafka-connect healthy):
     make register-connector
     # or:  python infra/kafka-connect/register_connector.py
 """
+
 from __future__ import annotations
 
 import json

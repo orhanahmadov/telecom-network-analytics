@@ -13,6 +13,7 @@ Usage:
     python -m ingestion.producer.db_writer --count 100
     python -m ingestion.producer.db_writer --forever
 """
+
 from __future__ import annotations
 
 import argparse
@@ -55,8 +56,17 @@ INSERT_SQL = (
 
 # Keys of the generator dict that are structured columns; everything else is schema drift -> `extra`.
 _KNOWN_KEYS = {
-    "event_id", "event_type", "event_time", "signal_dbm", "duration_sec", "call_result",
-    "data_volume_mb", "avg_throughput_mbps", "latency_ms", "subscriber", "cell",
+    "event_id",
+    "event_type",
+    "event_time",
+    "signal_dbm",
+    "duration_sec",
+    "call_result",
+    "data_volume_mb",
+    "avg_throughput_mbps",
+    "latency_ms",
+    "subscriber",
+    "cell",
 }
 
 

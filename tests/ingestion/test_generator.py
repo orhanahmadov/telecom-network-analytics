@@ -1,6 +1,5 @@
 from datetime import datetime
 
-import pytest
 
 from ingestion.producer import generator
 from ingestion.producer.generator import build_pools, generate_event
@@ -79,8 +78,11 @@ def test_degraded_cells_drop_more_calls():
         dropped = total = 0
         for _ in range(3000):
             ev = generator.NetworkEvent(
-                event_id="x", event_type=generator.EventType.VOICE_CALL, event_time="t",
-                subscriber=generator._get_pools()[0][0], cell=cell,
+                event_id="x",
+                event_type=generator.EventType.VOICE_CALL,
+                event_time="t",
+                subscriber=generator._get_pools()[0][0],
+                cell=cell,
             )
             generator._fill_voice(ev)
             total += 1

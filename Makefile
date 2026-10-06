@@ -4,7 +4,7 @@ COUNT ?= 1000
 BATCH_SIZE ?= 200
 
 .DEFAULT_GOAL := help
-.PHONY: help init-env venv up down clean ps logs register-connector generate generate-forever consume smoke test dbt-debug
+.PHONY: help init-env venv up down clean ps logs register-connector generate generate-forever consume smoke test dbt-debug lint format format-check compile-check compose-validate ci
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -53,6 +53,24 @@ smoke: ## Check the pipeline is wired: connector RUNNING, databases, object stor
 
 test: ## Run the test suite
 	PYTHONPATH=. $(PYTHON) -m pytest -q
+
+lint: ## Check code with ruff (no changes made)
+	$(PYTHON) -m ruff check .
+
+format: ## Auto-format code with ruff (rewrites files)
+	$(PYTHON) -m ruff format .
+
+format-check: ## Check formatting with ruff (no changes made; used by CI)
+	$(PYTHON) -m ruff format --check .
+
+compile-check: ## Byte-compile every pipeline module to catch syntax/import errors
+	$(PYTHON) -m compileall -q config ingestion orchestration scripts transformation tests
+
+compose-validate: ## Validate infra/docker-compose.yml (needs Docker; generates a throwaway .env if missing)
+	@test -f .env || python3 scripts/init_env.py
+	docker compose -f infra/docker-compose.yml --env-file .env config -q
+
+ci: lint format-check compile-check test ## Run everything CI runs, except compose-validate (needs Docker)
 
 dbt-debug: ## Check dbt can connect to the warehouse, from inside the Airflow container
 	$(COMPOSE) exec airflow-scheduler bash -c "cd /opt/airflow/project/transformation/dbt_telecom && DBT_PROFILES_DIR=. /home/airflow/dbt-venv/bin/dbt debug --connection"

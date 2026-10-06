@@ -1,5 +1,4 @@
 import base64
-import uuid
 
 from scripts import init_env
 

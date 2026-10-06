@@ -12,9 +12,15 @@ def test_object_key_uses_message_time_not_wall_clock():
 
 
 def test_hour_partition_rolls_over_at_the_hour_and_day_boundary():
-    before = consumer.build_object_key(timestamp_ms=1772751599000, partition=0, first_offset=1, last_offset=2)  # 2026-03-05T22:59:59Z
-    after = consumer.build_object_key(timestamp_ms=1772751600000, partition=0, first_offset=1, last_offset=2)   # 23:00:00Z
-    next_day = consumer.build_object_key(timestamp_ms=1772755200000, partition=0, first_offset=1, last_offset=2)  # 2026-03-06T00:00:00Z
+    before = consumer.build_object_key(
+        timestamp_ms=1772751599000, partition=0, first_offset=1, last_offset=2
+    )  # 2026-03-05T22:59:59Z
+    after = consumer.build_object_key(
+        timestamp_ms=1772751600000, partition=0, first_offset=1, last_offset=2
+    )  # 23:00:00Z
+    next_day = consumer.build_object_key(
+        timestamp_ms=1772755200000, partition=0, first_offset=1, last_offset=2
+    )  # 2026-03-06T00:00:00Z
     assert "dt=2026-03-05/hr=22/" in before
     assert "dt=2026-03-05/hr=23/" in after
     assert "dt=2026-03-06/hr=00/" in next_day

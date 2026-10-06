@@ -119,6 +119,8 @@ Without Make, use `docker compose -f infra/docker-compose.yml --env-file .env <c
 
 ```
 .
+├── .github/
+│   └── workflows/ci.yml                # lint, format, compile-check, test, docker-compose validation
 ├── docs/
 │   └── PROJECT_PLAN.md                 # problem, sources, architecture, model, DQ, roadmap, risks
 ├── infra/
@@ -149,8 +151,9 @@ Without Make, use `docker compose -f infra/docker-compose.yml --env-file .env <c
 │   └── smoke_check.py                  # checks the running stack is wired: connector, DBs, object store, topic
 ├── tests/                              # unit + contract tests (see below)
 ├── .env.example                        # every required variable, documented
+├── ruff.toml                           # narrow lint/format rule set used by `make lint` and CI
 ├── requirements.txt                    # pinned runtime dependencies (host-side tools)
-├── requirements-dev.txt                # + pytest, dbt (pinned)
+├── requirements-dev.txt                # + pytest, dbt, ruff (pinned)
 └── Makefile                            # one-word entry points for everything above
 ```
 
@@ -167,6 +170,28 @@ variable read by `config/settings.py` must appear in `.env.example`; the columns
 writer inserts must match the source DDL; the raw table must mirror the source table;
 all image tags must be pinned; every long-running service must have a healthcheck; host
 ports must be loopback-only; the connector topic must match the configured topic.
+
+### Continuous Integration
+
+Every pull request (and every push to `main`) runs three independent GitHub Actions jobs
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):
+
+| Job | What it checks | Same as running locally |
+|---|---|---|
+| `lint-and-format` | `ruff check` (syntax errors, unused imports) and `ruff format --check` | `make lint` / `make format-check` |
+| `compile-check` | Every module under `config/`, `ingestion/`, `orchestration/`, `scripts/`, `transformation/`, `tests/` byte-compiles, then the Phase 0 test suite runs | `make compile-check` / `make test` |
+| `compose-validate` | `infra/docker-compose.yml` is syntactically valid and every variable it references resolves | `make compose-validate` |
+
+`make lint` and `make format-check` use the rule set in [`ruff.toml`](ruff.toml) —
+deliberately narrow (syntax errors and unused imports only; no import-sorting or
+docstring rules), since this project does not enforce a broader style guide. Running the
+full integration smoke test (`make smoke`) in CI is intentionally out of scope for Phase 1
+(see `docs/PROJECT_PLAN.md`): it needs the whole stack running, which does not fit a
+lightweight PR-gate runner.
+
+`main` is a protected branch: every change arrives through a pull request, and the branch
+cannot be updated directly (including by the repository owner) — see
+`docs/PROJECT_PLAN.md` for the branching workflow.
 
 ## Current Status — Phase 0
 

@@ -17,6 +17,7 @@ Usage:
     spark-submit --master ${SPARK_MASTER_URL} \
         transformation/spark_jobs/cell_hourly_kpi_batch.py --date 2026-01-31
 """
+
 from __future__ import annotations
 
 import argparse
