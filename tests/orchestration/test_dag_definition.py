@@ -29,3 +29,23 @@ def test_dbt_binary_matches_the_airflow_dockerfile():
     dockerfile = (DAG_FILE.parents[2] / "infra" / "airflow" / "Dockerfile").read_text()
     assert "/home/airflow/dbt-venv" in dockerfile
     assert "/home/airflow/dbt-venv/bin/dbt" in _source()
+
+
+def test_retries_have_an_explicit_delay():
+    src = _source()
+    assert '"retries": 2' in src
+    assert '"retry_delay": timedelta(' in src
+
+
+def test_force_failure_param_is_declared_and_wired_into_load_raw_to_postgres():
+    src = _source()
+    assert '"force_failure"' in src
+    assert 'enum=["none", "load_raw_to_postgres"]' in src
+    assert 'params.get("force_failure") == "load_raw_to_postgres"' in src
+
+
+def test_tasks_log_structured_events():
+    src = _source()
+    assert "logger.info(" in src
+    assert "logger.error(" in src
+    assert "event=load_raw_to_postgres_complete" in src

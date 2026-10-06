@@ -258,7 +258,8 @@ data_sessions, total_volume_mb, avg_throughput_mbps, p95_latency_ms, avg_signal_
   - *dbt:* staging views are pure `SELECT`s; incremental facts use `unique_key = event_id`, so a re-run merges instead of duplicating.
   - *Spark:* processes one `--date` partition; the day is replaced atomically (delete + insert in one transaction), so re-running a date never appends twice.
 - **Failure handling**
-  - Airflow task retries (`retries: 2`); the load task blocks both dbt and Spark, so bad raw data never silently reaches `curated`.
+  - Airflow task retries (`retries: 2`, `retry_delay: 2 minutes`); the load task blocks both dbt and Spark, so bad raw data never silently reaches `curated`.
+  - The DAG's `force_failure` param deliberately fails `load_raw_to_postgres` before it touches any data (trigger with `{"force_failure": "load_raw_to_postgres"}`), proving retries-with-delay and alerting work on a real run, and that a failed run leaves no partial state - re-triggering with the default `"none"` loads the same logical date normally.
   - Dirty records are carried through to staging and *flagged* so failures are visible in test results rather than hidden by pre-filtering.
   - Consumer offsets are committed only after the object is written (at-least-once, deduplicated downstream).
   - If Debezium's replication slot falls behind or the connector fails, that is visible through `GET /connectors/<name>/status` on the Connect REST API, independent of the DAG.

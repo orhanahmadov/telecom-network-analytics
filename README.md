@@ -167,7 +167,7 @@ configuration, `tests` = automated checks, `docs` = planning and design.
 
 ### Tests
 
-`make test` runs 78+ tests without Docker. Besides unit tests they include **contract
+`make test` runs 81+ tests without Docker. Besides unit tests they include **contract
 tests** that keep the pieces consistent: every `${VAR}` in `docker-compose.yml` and every
 variable read by `config/settings.py` must appear in `.env.example`; the columns the
 writer inserts must match the source DDL; the raw table must mirror the source table;
@@ -215,7 +215,10 @@ cannot be updated directly (including by the repository owner) — see
   into `raw.network_events`, idempotently at both the object level (`raw._loaded_objects`)
   and the row level (`ON CONFLICT (event_id) DO NOTHING`), wired into the DAG's
   `load_raw_to_postgres` task.
-- Orchestration skeleton: one Airflow DAG with the intended task graph, created paused.
+- Orchestration: one Airflow DAG with the intended task graph, created paused, every task
+  retrying twice with a 2-minute delay. A `force_failure` DAG param deliberately fails
+  `load_raw_to_postgres` before it touches any data, to prove retries/alerting work and
+  that a failed run leaves no partial state. Tasks log structured `event=...` lines.
 - Transformation: a dbt project with real `staging` models (typed casts, `dq_flags`,
   `stg_network_events_valid` / `_rejected`) and a real `curated` dimensional model
   (`dim_cell_site`, `dim_subscriber` SCD2, `fct_voice_call`, `fct_data_session`), covered
