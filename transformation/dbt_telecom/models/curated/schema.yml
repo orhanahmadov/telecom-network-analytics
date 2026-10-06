@@ -1,0 +1,62 @@
+version: 2
+
+models:
+  - name: dim_cell_site
+    description: One row per cell, current attributes only (SCD Type 1 overwrite).
+    columns:
+      - name: cell_id
+        data_tests:
+          - not_null
+          - unique
+
+  - name: dim_subscriber
+    description: >
+      One row per subscriber per validity period (SCD Type 2 on plan). is_current = true
+      identifies the current version; valid_to is null for it.
+    columns:
+      - name: subscriber_id
+        data_tests:
+          - not_null
+      - name: valid_from
+        data_tests:
+          - not_null
+
+  - name: fct_voice_call
+    description: One row per voice call event (incremental, unique_key = event_id).
+    columns:
+      - name: event_id
+        data_tests:
+          - not_null
+          - unique
+      - name: call_result
+        data_tests:
+          - accepted_values:  # DQ check 6
+              values: ["completed", "dropped", "failed_setup"]
+      - name: cell_id
+        data_tests:
+          - relationships:  # DQ check 7
+              to: ref('dim_cell_site')
+              field: cell_id
+      - name: subscriber_id
+        data_tests:
+          - relationships:  # DQ check 7
+              to: ref('dim_subscriber')
+              field: subscriber_id
+
+  - name: fct_data_session
+    description: One row per data session event (incremental, unique_key = event_id).
+    columns:
+      - name: event_id
+        data_tests:
+          - not_null
+          - unique
+      - name: cell_id
+        data_tests:
+          - relationships:  # DQ check 7
+              to: ref('dim_cell_site')
+              field: cell_id
+      - name: subscriber_id
+        data_tests:
+          - relationships:  # DQ check 7
+              to: ref('dim_subscriber')
+              field: subscriber_id
