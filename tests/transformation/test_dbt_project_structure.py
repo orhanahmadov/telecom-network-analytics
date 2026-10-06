@@ -28,6 +28,48 @@ def test_staging_and_curated_dirs_exist():
     assert (DBT_PROJECT_DIR / "models" / "curated" / "README.md").exists()
 
 
+def test_staging_split_models_exist():
+    staging = DBT_PROJECT_DIR / "models" / "staging"
+    assert (staging / "stg_network_events_valid.sql").exists()
+    assert (staging / "stg_network_events_rejected.sql").exists()
+
+
+def test_curated_models_exist():
+    curated = DBT_PROJECT_DIR / "models" / "curated"
+    for model in ("dim_cell_site.sql", "dim_subscriber.sql", "fct_voice_call.sql", "fct_data_session.sql"):
+        assert (curated / model).exists(), model
+
+
+def test_curated_fact_models_are_incremental_on_event_id():
+    curated = DBT_PROJECT_DIR / "models" / "curated"
+    for model in ("fct_voice_call.sql", "fct_data_session.sql"):
+        src = (curated / model).read_text()
+        assert "materialized='incremental'" in src
+        assert "unique_key='event_id'" in src
+
+
+def test_curated_schema_yml_declares_dq_tests():
+    schema = yaml.safe_load((DBT_PROJECT_DIR / "models" / "curated" / "schema.yml").read_text())
+    models_by_name = {m["name"]: m for m in schema["models"]}
+    call_result_tests = models_by_name["fct_voice_call"]["columns"]
+    column_names = {c["name"] for c in call_result_tests}
+    assert {"event_id", "call_result", "cell_id", "subscriber_id"} <= column_names
+
+
+def test_adr_for_dim_subscriber_scd2_exists():
+    adr_dir = ROOT / "docs" / "decisions"
+    assert any(p.name.endswith("derive-dim-subscriber-scd2-from-event-stream.md") for p in adr_dir.glob("*.md"))
+
+
+def test_schema_name_is_not_prefixed_with_the_target_schema():
+    # Found live: dbt's default generate_schema_name macro prefixes a model's custom
+    # schema with the profile's base schema (staging_staging / staging_curated instead of
+    # staging / curated). macros/generate_schema_name.sql overrides this - see its comment.
+    macro = (DBT_PROJECT_DIR / "macros" / "generate_schema_name.sql").read_text()
+    assert "generate_schema_name" in macro
+    assert "custom_schema_name | trim" in macro
+
+
 def test_source_table_is_declared_in_raw_ddl():
     sources = yaml.safe_load((DBT_PROJECT_DIR / "models" / "staging" / "_sources.yml").read_text())
     table = sources["sources"][0]["tables"][0]["name"]

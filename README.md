@@ -122,7 +122,8 @@ Without Make, use `docker compose -f infra/docker-compose.yml --env-file .env <c
 ├── .github/
 │   └── workflows/ci.yml                # lint, format, compile-check, test, docker-compose validation
 ├── docs/
-│   └── PROJECT_PLAN.md                 # problem, sources, architecture, model, DQ, roadmap, risks
+│   ├── PROJECT_PLAN.md                 # problem, sources, architecture, model, DQ, roadmap, risks
+│   └── decisions/                      # ADRs for significant design choices
 ├── infra/
 │   ├── docker-compose.yml              # every service, pinned images, healthchecks, named volumes
 │   ├── airflow/Dockerfile              # Airflow image + dbt in an isolated virtualenv
@@ -143,7 +144,7 @@ Without Make, use `docker compose -f infra/docker-compose.yml --env-file .env <c
 ├── orchestration/
 │   └── dags/telecom_pipeline_dag.py    # Airflow DAG (load_raw_to_postgres -> dbt staging/curated + Spark)
 ├── transformation/
-│   ├── dbt_telecom/                    # dbt project: staging passthrough model; curated layer planned
+│   ├── dbt_telecom/                    # dbt project: real staging (DQ flags) + curated dimensional model
 │   └── spark_jobs/
 │       └── cell_hourly_kpi_batch.py    # Spark job skeleton: RustFS -> agg_cell_hourly_kpi
 ├── config/
@@ -166,7 +167,7 @@ configuration, `tests` = automated checks, `docs` = planning and design.
 
 ### Tests
 
-`make test` runs 40+ tests without Docker. Besides unit tests they include **contract
+`make test` runs 70+ tests without Docker. Besides unit tests they include **contract
 tests** that keep the pieces consistent: every `${VAR}` in `docker-compose.yml` and every
 variable read by `config/settings.py` must appear in `.env.example`; the columns the
 writer inserts must match the source DDL; the raw table must mirror the source table;
@@ -214,19 +215,25 @@ cannot be updated directly (including by the repository owner) — see
   and the row level (`ON CONFLICT (event_id) DO NOTHING`), wired into the DAG's
   `load_raw_to_postgres` task.
 - Orchestration skeleton: one Airflow DAG with the intended task graph, created paused.
-- Transformation skeleton: a dbt project with a compilable staging passthrough model, and
-  a Spark job skeleton with a working CLI.
+- Transformation: a dbt project with real `staging` models (typed casts, `dq_flags`,
+  `stg_network_events_valid` / `_rejected`) and a real `curated` dimensional model
+  (`dim_cell_site`, `dim_subscriber` SCD2, `fct_voice_call`, `fct_data_session`), covered
+  by 15 dbt data tests (not_null, unique, accepted_values, relationships). A Spark job
+  skeleton with a working CLI is still a placeholder (Phase 3).
 - One-command secret generation (`make init-env`), pinned dependencies, and a CI gate
   (lint, compile-check, compose validation) on every pull request.
+- Architecture decision records for significant design choices live in `docs/decisions/`.
 
 **Not implemented yet (by design; scheduled in `docs/PROJECT_PLAN.md`, section 8)**
 
-Cleaned staging models and the curated dimensional model (Phase 2), the Spark aggregation
-and the hourly schedule (Phase 3), data quality checks wired into the DAG (Phase 4),
-serving views (Phase 5), and the branching/CI workflow (Phase 6).
+The Spark aggregation and the hourly schedule (Phase 3), data quality checks wired into
+the DAG as a blocking gate (Phase 4), serving views (Phase 5), and the branching/CI
+workflow (Phase 6 — branch protection and PR-based CI are already in place ahead of
+schedule; what remains there is the rest of that phase's documentation pass).
 
-`dbt parse` prints one warning about the unused `curated` configuration path — expected
-until Phase 2 adds models to that folder.
+The generator does not yet simulate subscriber plan migrations, so `dim_subscriber`'s
+SCD Type 2 logic is implemented and tested but currently produces exactly one version per
+subscriber — see `docs/decisions/0001-derive-dim-subscriber-scd2-from-event-stream.md`.
 
 ## Troubleshooting
 

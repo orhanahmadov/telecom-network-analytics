@@ -3,5 +3,17 @@ version: 2
 models:
   - name: stg_network_events
     description: >
-      Phase 0 passthrough of raw.network_events. Cleaning, casts, drift handling
-      and column-level tests land in Phase 2 (see docs/PROJECT_PLAN.md, section 8).
+      Typed, flagged 1:1 view over raw.network_events. dq_flags records every data-quality
+      issue found (docs/PROJECT_PLAN.md, section 7); nothing is dropped here.
+    columns:
+      - name: event_id
+        description: Primary key, inherited from source.network_events via CDC.
+        data_tests:
+          - not_null  # DQ check 1
+          - unique    # DQ check 1
+
+  - name: stg_network_events_valid
+    description: stg_network_events rows with zero dq_flags - the only input to curated.
+
+  - name: stg_network_events_rejected
+    description: stg_network_events rows with at least one dq_flag, kept for audit (never dropped).
