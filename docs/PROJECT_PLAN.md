@@ -241,9 +241,13 @@ data_sessions, total_volume_mb, avg_throughput_mbps, p95_latency_ms, avg_signal_
 ## 6. Pipeline Design
 
 - **Orchestration.** One Airflow DAG, `telecom_pipeline`, covering the batch portion only:
-  `load_raw_to_postgres → dbt_run_staging → dbt_run_curated`, and in parallel
-  `load_raw_to_postgres → spark_batch_cell_hourly_kpi`. The generator, Debezium connector
-  and Kafka consumer are long-running services, not DAG tasks.
+  `load_raw_to_postgres → dbt_run_staging → dbt_test_staging → dbt_run_curated →
+  dbt_test_curated → dbt_run_serving → dbt_test_serving`, and in parallel
+  `load_raw_to_postgres → spark_batch_cell_hourly_kpi`. `dbt_test_staging` and
+  `dbt_test_curated` are blocking gates (Section 7, checks 1/6/7): a `dbt test` failure
+  fails that task, and Airflow leaves every downstream dbt task `upstream_failed` rather
+  than running it. The generator, Debezium connector and Kafka consumer are long-running
+  services, not DAG tasks.
 - **Scheduling.** The CDC path is continuous. The DAG is created **paused** and triggered
   manually until Phase 3, when it gets an hourly schedule — matching the "fresh within the
   hour, not sub-minute" latency the two consumers need (capacity planning and weekly
@@ -258,7 +262,7 @@ data_sessions, total_volume_mb, avg_throughput_mbps, p95_latency_ms, avg_signal_
   - *dbt:* staging views are pure `SELECT`s; incremental facts use `unique_key = event_id`, so a re-run merges instead of duplicating.
   - *Spark:* processes one `--date` partition; the day is replaced atomically (delete + insert in one transaction), so re-running a date never appends twice.
 - **Failure handling**
-  - Airflow task retries (`retries: 2`, `retry_delay: 2 minutes`); the load task blocks both dbt and Spark, so bad raw data never silently reaches `curated`.
+  - Airflow task retries (`retries: 2`, `retry_delay: 2 minutes`); the load task blocks both dbt and Spark, so bad raw data never silently reaches `curated`; `dbt_test_staging`/`dbt_test_curated` block `curated`/`serving` from refreshing on a `dbt test` failure (Section 7).
   - The DAG's `force_failure` param deliberately fails `load_raw_to_postgres` before it touches any data (trigger with `{"force_failure": "load_raw_to_postgres"}`), proving retries-with-delay and alerting work on a real run, and that a failed run leaves no partial state - re-triggering with the default `"none"` loads the same logical date normally.
   - Dirty records are carried through to staging and *flagged* so failures are visible in test results rather than hidden by pre-filtering.
   - Consumer offsets are committed only after the object is written (at-least-once, deduplicated downstream).
@@ -273,29 +277,31 @@ keeps the rest with the reason, so nothing disappears without an audit trail.
 
 | # | Check | Where enforced | Severity / on failure |
 |---|---|---|---|
-| 1 | `event_id` not null and unique | dbt `not_null` + `unique` on staging | **error** — `dbt test` fails and the DAG stops before `dbt_run_curated` |
+| 1 | `event_id` not null and unique | dbt `not_null` + `unique` on staging | **error** — `dbt_test_staging` fails and the DAG stops before `dbt_run_curated` |
 | 2 | `event_time_raw` parses to a valid timestamp | staging cast → flag `bad_timestamp` | row moved to `rejected`; count reported in `dq_summary` |
 | 3 | `subscriber_id` not null | staging flag `missing_subscriber` | row moved to `rejected` (cannot join to `dim_subscriber`) |
 | 4 | `duration_sec >= 0` and `data_volume_mb >= 0` | staging flags `negative_duration` / `negative_volume` | row moved to `rejected` |
 | 5 | `signal_dbm` within −140…−44 | staging flag `signal_out_of_range` | row kept, signal set to NULL, flag recorded (the rest of the event is still useful) |
-| 6 | `call_result` ∈ {completed, dropped, failed_setup} for voice events | dbt `accepted_values` | **error** |
-| 7 | Every `cell_id` exists in `dim_cell_site`; every `subscriber_id` in `dim_subscriber` | dbt `relationships` on the facts | **error** — no orphaned facts published |
+| 6 | `call_result` ∈ {completed, dropped, failed_setup} for voice events | dbt `accepted_values` | **error** — `dbt_test_curated` fails and the DAG stops before `dbt_run_serving` |
+| 7 | Every `cell_id` exists in `dim_cell_site`; every `subscriber_id` in `dim_subscriber` | dbt `relationships` on the facts | **error** — `dbt_test_curated` fails; no orphaned facts reach `serving` |
 | 8 | Schema drift: unknown keys in `extra` | staging extracts known drift fields (`volte_enabled`) into typed columns; everything else stays in `extra` | never dropped; a `dbt` singular test **warns** when an unrecognised key appears, prompting a model update |
 | 9 | Freshness: newest `raw._loaded_at` is recent | `dbt source freshness` (`warn_after` 2 h) | **warn** |
 | 10 | Completeness: row count in `source.network_events` vs `raw.network_events` for a closed time window | Airflow SQL check task | **warn** at >0.5% gap, **fail** at >2% (allowing for in-flight lag) |
 
-Checks 1, 6, 7 block publication; the rest surface as counts in a `dq_summary` view.
-Phase 4 wires all of it into the DAG and proves it with a deliberately corrupted batch.
+Checks 1, 6, 7 block publication and are wired into the DAG as blocking gates
+(`dbt_test_staging`, `dbt_test_curated`) as of Phase 1. The rest (checks 2–5, 8–10) surface
+as counts in a `dq_summary` view; Phase 4 wires those into the DAG (freshness,
+reconciliation, alerting) and proves the whole set with a deliberately corrupted batch.
 
 ## 8. Phase Roadmap
 
 | Phase | Scope | Definition of Done |
 |---|---|---|
 | **0 — Infrastructure & skeleton** (this delivery) | Repo, structure, Docker Compose infra (source Postgres, warehouse Postgres, Airflow metadata Postgres, Kafka, Kafka Connect/Debezium, Kafka UI, RustFS, Spark master + worker, Airflow), central config, `.env.example`, pinned dependencies, placeholder modules with real imports, tests, docs | Every Phase 0 DoD item in the assignment: repo + instructor collaborator; everything pushed to `main`; plan complete; README followed from scratch works; fresh clone brings every service to healthy; down/up preserves state; no secrets in repo or history; pinned dependencies; meaningful commit history; every file explainable live |
-| **1 — Ingestion & raw storage** | Connector registered automatically by Compose; generator and consumer run continuously; consumer flushes on time as well as size; implement `load_raw_to_postgres`; generator gains slow plan migrations (so SCD2 has something to track) and, optionally, usage decay for subscribers on degraded cells (so the churn heuristic can be validated) | A generated event travels source → Kafka → RustFS → `raw.network_events` with zero loss; killing and restarting the consumer or the load task creates no duplicates (proved by row counts); source/raw counts reconcile |
+| **1 — Ingestion & raw storage** | Connector registered automatically by Compose; generator and consumer run continuously; consumer flushes on time as well as size; implement `load_raw_to_postgres`; generator gains slow plan migrations (so SCD2 has something to track) and, optionally, usage decay for subscribers on degraded cells (so the churn heuristic can be validated); DQ check gate (checks 1, 6, 7) blocking `curated`/`serving` refresh on `dbt test` failure | A generated event travels source → Kafka → RustFS → `raw.network_events` with zero loss; killing and restarting the consumer or the load task creates no duplicates (proved by row counts); source/raw counts reconcile |
 | **2 — Transformation** | Real staging models with DQ flags (Section 7) and the curated dimensional model (Section 5), including SCD2 `dim_subscriber` | `dbt run` + `dbt test` pass on a populated warehouse; every curated table matches its documented grain and key; a plan change in the source produces a second `dim_subscriber` row |
 | **3 — Batch processing & orchestration** | Real Spark `agg_cell_hourly_kpi` (S3A read, JDBC write, atomic per-day replace); Airflow image gains a Spark client; hourly schedule; retries | A scheduled run completes unattended, including Spark; re-running a past date changes no row counts |
-| **4 — Data quality & observability** | Wire checks 1–10 into the DAG; `dq_summary` view; freshness; reconciliation; failure alerting | A deliberately corrupted batch is caught, blocks `curated` refresh, and is reported; a healthy batch passes untouched |
+| **4 — Data quality & observability** | Wire the remaining checks (2–5, 8–10) into the DAG — checks 1/6/7 already gate the DAG as of Phase 1; `dq_summary` view; freshness; reconciliation; failure alerting | A deliberately corrupted batch is caught, blocks `curated` refresh, and is reported; a healthy batch passes untouched |
 | **5 — Serving & consumption** | `vw_cell_quality_ranking`, `vw_subscriber_churn_signals`, tuned thresholds; optional dashboard | Both business questions from Section 1 are answered by one query each; the hidden degraded cells rank near the top |
 | **6 — Branching workflow & CI** | Pull-request workflow, CI running `pytest`, `dbt parse`, compose validation; documentation pass | PRs required for `main`; CI green on a sample PR |
 
