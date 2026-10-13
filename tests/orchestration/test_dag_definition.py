@@ -15,14 +15,36 @@ def test_dag_file_is_valid_python():
 def test_dag_ids_and_tasks_are_declared():
     src = _source()
     assert 'dag_id="telecom_pipeline"' in src
-    for task_id in ("load_raw_to_postgres", "dbt_run_staging", "dbt_run_curated", "spark_batch_cell_hourly_kpi"):
+    for task_id in (
+        "load_raw_to_postgres",
+        "dbt_run_staging",
+        "dbt_test_staging",
+        "dbt_run_curated",
+        "dbt_test_curated",
+        "dbt_run_serving",
+        "dbt_test_serving",
+        "spark_batch_cell_hourly_kpi",
+    ):
         assert f'task_id="{task_id}"' in src
 
 
 def test_dependency_graph_matches_the_plan():
     src = _source()
-    assert "load_raw >> dbt_run_staging >> dbt_run_curated" in src
+    assert "load_raw" in src
+    assert ">> dbt_run_staging" in src
+    assert ">> dbt_test_staging" in src
+    assert ">> dbt_run_curated" in src
+    assert ">> dbt_test_curated" in src
+    assert ">> dbt_run_serving" in src
+    assert ">> dbt_test_serving" in src
     assert "load_raw >> spark_cell_hourly_kpi" in src
+
+
+def test_dbt_test_tasks_run_dbt_test_not_dbt_run():
+    src = _source()
+    assert '{DBT} test --select staging"' in src
+    assert '{DBT} test --select curated"' in src
+    assert '{DBT} test --select serving"' in src
 
 
 def test_dbt_binary_matches_the_airflow_dockerfile():

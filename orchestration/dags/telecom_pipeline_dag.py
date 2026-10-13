@@ -4,7 +4,8 @@ Phase 0 skeleton DAG for the Telecom Network Analytics pipeline.
 Defines the SHAPE of the batch pipeline so the orchestration layer is provable
 from day one:
 
-    load_raw_to_postgres --> dbt_run_staging --> dbt_run_curated
+    load_raw_to_postgres --> dbt_run_staging --> dbt_test_staging --> dbt_run_curated
+                          --> dbt_test_curated --> dbt_run_serving --> dbt_test_serving
                          \\-> spark_batch_cell_hourly_kpi
 
 The generator, Debezium and the Kafka consumer are NOT orchestrated here: events flow
@@ -23,9 +24,14 @@ Every task retries twice with a delay (`default_args`) before Airflow marks the 
 failed, per docs/PROJECT_PLAN.md section 6, "Failure handling". To prove that behavior
 (and that a failed run leaves no partial state) without waiting for a real fault, trigger
 the DAG with `{"force_failure": "load_raw_to_postgres"}` - see `load_raw_to_postgres`
-below. The dbt and Spark steps are still placeholders - no business logic ships for them
-yet. The DAG is created paused (AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION) so it never
-runs unattended before all of its logic exists. See docs/PROJECT_PLAN.md, section 8.
+below.
+
+`dbt_test_staging` and `dbt_test_curated` are blocking gates (docs/PROJECT_PLAN.md,
+section 7, checks 1/6/7): a `dbt test` failure fails that task, which Airflow leaves
+every downstream dbt task in `upstream_failed` - bad data never silently reaches
+`curated` or `serving`. The Spark step is still a placeholder - no business logic ships
+for it yet. The DAG is created paused (AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION) so it
+never runs unattended before all of its logic exists. See docs/PROJECT_PLAN.md, section 8.
 """
 
 from __future__ import annotations
@@ -96,7 +102,7 @@ def spark_batch_cell_hourly_kpi(logical_date, **_context) -> None:
 
 with DAG(
     dag_id="telecom_pipeline",
-    description="RustFS raw -> Postgres raw -> dbt staging/curated + Spark cell KPI aggregation",
+    description="RustFS raw -> Postgres raw -> dbt staging/curated/serving (gated by dbt test) + Spark cell KPI aggregation",
     start_date=datetime(2026, 1, 1),
     schedule=None,
     catchup=False,
@@ -126,9 +132,38 @@ with DAG(
         bash_command=f"cd {DBT_DIR} && DBT_PROFILES_DIR=. {DBT} run --select staging",
     )
 
+    # Blocking DQ gate (docs/PROJECT_PLAN.md section 7, checks 1): event_id not_null/unique
+    # on stg_network_events. A failure here fails this task, so dbt_run_curated (and
+    # everything after it) is never triggered - Airflow marks it upstream_failed.
+    dbt_test_staging = BashOperator(
+        task_id="dbt_test_staging",
+        bash_command=f"cd {DBT_DIR} && DBT_PROFILES_DIR=. {DBT} test --select staging",
+    )
+
     dbt_run_curated = BashOperator(
         task_id="dbt_run_curated",
         bash_command=f"cd {DBT_DIR} && DBT_PROFILES_DIR=. {DBT} run --select curated",
+    )
+
+    # Blocking DQ gate (docs/PROJECT_PLAN.md section 7, checks 6/7): accepted_values on
+    # call_result, relationships from both facts to their dimensions. A failure here blocks
+    # dbt_run_serving - the serving views never read a curated layer with orphaned facts.
+    dbt_test_curated = BashOperator(
+        task_id="dbt_test_curated",
+        bash_command=f"cd {DBT_DIR} && DBT_PROFILES_DIR=. {DBT} test --select curated",
+    )
+
+    dbt_run_serving = BashOperator(
+        task_id="dbt_run_serving",
+        bash_command=f"cd {DBT_DIR} && DBT_PROFILES_DIR=. {DBT} run --select serving",
+    )
+
+    # Not a blocking gate (nothing downstream depends on serving) - still runs so a
+    # regression in the two views fails the DAG run and is reported, instead of silently
+    # publishing a broken business-question answer.
+    dbt_test_serving = BashOperator(
+        task_id="dbt_test_serving",
+        bash_command=f"cd {DBT_DIR} && DBT_PROFILES_DIR=. {DBT} test --select serving",
     )
 
     spark_cell_hourly_kpi = PythonOperator(
@@ -136,5 +171,13 @@ with DAG(
         python_callable=spark_batch_cell_hourly_kpi,
     )
 
-    load_raw >> dbt_run_staging >> dbt_run_curated
+    (
+        load_raw
+        >> dbt_run_staging
+        >> dbt_test_staging
+        >> dbt_run_curated
+        >> dbt_test_curated
+        >> dbt_run_serving
+        >> dbt_test_serving
+    )
     load_raw >> spark_cell_hourly_kpi

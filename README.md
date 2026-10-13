@@ -167,7 +167,7 @@ configuration, `tests` = automated checks, `docs` = planning and design.
 
 ### Tests
 
-`make test` runs 81+ tests without Docker. Besides unit tests they include **contract
+`make test` runs 82+ tests without Docker. Besides unit tests they include **contract
 tests** that keep the pieces consistent: every `${VAR}` in `docker-compose.yml` and every
 variable read by `config/settings.py` must appear in `.env.example`; the columns the
 writer inserts must match the source DDL; the raw table must mirror the source table;
@@ -215,10 +215,13 @@ cannot be updated directly (including by the repository owner) — see
   into `raw.network_events`, idempotently at both the object level (`raw._loaded_objects`)
   and the row level (`ON CONFLICT (event_id) DO NOTHING`), wired into the DAG's
   `load_raw_to_postgres` task.
-- Orchestration: one Airflow DAG with the intended task graph, created paused, every task
+- Orchestration: one Airflow DAG with the full task graph, created paused, every task
   retrying twice with a 2-minute delay. A `force_failure` DAG param deliberately fails
   `load_raw_to_postgres` before it touches any data, to prove retries/alerting work and
   that a failed run leaves no partial state. Tasks log structured `event=...` lines.
+  `dbt_test_staging` / `dbt_test_curated` are blocking DQ gates — a `dbt test` failure
+  fails the task and leaves every downstream dbt task `upstream_failed`, so bad data never
+  reaches `curated` or `serving`.
 - Transformation: a dbt project with real `staging` models (typed casts, `dq_flags`,
   `stg_network_events_valid` / `_rejected`) and a real `curated` dimensional model
   (`dim_cell_site`, `dim_subscriber` SCD2, `fct_voice_call`, `fct_data_session`), covered
@@ -237,10 +240,11 @@ cannot be updated directly (including by the repository owner) — see
 
 **Not implemented yet (by design; scheduled in `docs/PROJECT_PLAN.md`, section 8)**
 
-The Spark aggregation and the hourly schedule (Phase 3), data quality checks wired into
-the DAG as a blocking gate (Phase 4), and the branching/CI workflow (Phase 6 — branch
-protection and PR-based CI are already in place ahead of schedule; what remains there is
-the rest of that phase's documentation pass).
+The Spark aggregation and the hourly schedule (Phase 3), the remaining data quality
+checks — `dq_summary` view, freshness, reconciliation, failure alerting (Phase 4; checks
+1/6/7 already gate the DAG as of Phase 1) — and the branching/CI workflow (Phase 6 —
+branch protection and PR-based CI are already in place ahead of schedule; what remains
+there is the rest of that phase's documentation pass).
 
 The generator does not yet simulate subscriber plan migrations, so `dim_subscriber`'s
 SCD Type 2 logic is implemented and tested but currently produces exactly one version per
