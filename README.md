@@ -25,12 +25,35 @@ flowchart LR
     AF --> PGRAW[("Postgres warehouse: raw")]
     PGRAW --> STG["dbt staging"]
     STG --> CUR["dbt curated: dims + facts"]
-    RUSTFS --> SPARK["Spark batch job"]
+    RUSTFS --> SPARK["Spark batch job (placeholder)"]
     SPARK -->|JDBC| CUR
     CUR --> VIEWS["SQL serving views"]
+
+    style SPARK stroke-dasharray: 5 5
 ```
 
-Component-by-component walkthrough: [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md), section 3.
+**Implemented vs. planned:** every node above is real and orchestrated by the DAG. The
+dashed node, `Spark batch job`, is wired into the DAG (`spark_batch_cell_hourly_kpi` task,
+reads its CLI args, logs, then raises `NotImplementedError`) but its aggregation logic
+ships in Phase 3 — see "Current Status" below. Everything else is fully implemented.
+
+**Component roles** (condensed; full walkthrough with rationale for each choice:
+[`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md), section 3):
+
+| Component | Role in this pipeline |
+|---|---|
+| Python generator | Only component that invents data; writes into `source.network_events` |
+| Postgres (source) | Stands in for a real network-probe collector's database |
+| Kafka Connect + Debezium | **Ingestion**: reads the source WAL, publishes every insert to Kafka — no app code |
+| Kafka | Durable, replayable buffer between CDC and the storage writer |
+| Kafka consumer | Batches Kafka messages into NDJSON objects in RustFS, idempotent by offset range |
+| RustFS | **Raw landing zone** — S3-compatible object storage, the data lake layer |
+| Postgres warehouse — `raw` | Warehouse copy of the raw data, loaded by the DAG so dbt can transform it |
+| dbt staging | **Staging**: 1:1 typed views over `raw`, DQ flags, bad rows flagged not dropped |
+| dbt curated | **Curated**: dimension/fact tables the business actually queries |
+| Spark batch job | Reads RustFS directly, writes one aggregate to `curated` over JDBC (placeholder) |
+| Airflow | **Orchestration**: sequences every task above, owns retries and failure handling |
+| SQL serving views | **Serving**: plain SQL over `curated`, queryable by any SQL client — no extra service |
 
 ## Tech Stack
 
@@ -105,6 +128,93 @@ make consume BATCH_SIZE=50       # land them in RustFS; Ctrl+C after the first b
 make dbt-debug                   # dbt (inside Airflow) can connect to the warehouse
 make smoke                       # infra wiring + a row count for every layer (source -> raw -> staging -> curated -> serving)
 ```
+
+## Run the Pipeline
+
+The steps above land a handful of events for a quick sanity check. This section is the
+full, real run: generate a non-trivial batch, carry it through every layer with the
+orchestrator, prove a deliberate failure is handled correctly, and verify each layer by
+hand. Every command below is exactly what a reviewer runs, with nothing done by hand
+outside of these commands.
+
+### 1. Generate and land a real batch
+
+```bash
+make register-connector          # idempotent; safe to re-run
+make generate COUNT=1500         # >=1000 rows, satisfying the Phase 1 volume requirement
+make consume                     # drains the topic into RustFS NDJSON batches; Ctrl+C once
+                                  # it stops logging new flushes (a few seconds after `generate` finishes)
+```
+
+The consumer partitions every object by the hour it was **ingested**
+(`raw/network_events/dt=<YYYY-MM-DD>/hr=<HH>/...`), so the logical date for this batch is
+whatever date you ran this step on (shown in the consumer's log lines).
+
+### 2. Trigger the DAG for that logical date
+
+Open Airflow at http://localhost:8080 (`AIRFLOW_ADMIN_USER` / `AIRFLOW_ADMIN_PASSWORD`
+from `.env`), find `telecom_pipeline`, unpause it, then **Trigger DAG w/ config**:
+
+```json
+{"force_failure": "none"}
+```
+
+Leave the logical date at its default (today) if you just ran step 1 for today, or pick
+the date you generated data for. From the CLI instead:
+
+```bash
+docker compose -f infra/docker-compose.yml --env-file .env exec airflow-scheduler   airflow dags trigger telecom_pipeline -e 2026-10-14 -c '{"force_failure": "none"}'
+```
+
+(replace `2026-10-14` with the logical date). Watch the Graph view:
+`load_raw_to_postgres -> dbt_run_staging -> dbt_test_staging -> dbt_run_curated ->
+dbt_test_curated -> dbt_run_serving -> dbt_test_serving` should all turn green.
+`spark_batch_cell_hourly_kpi` is a Phase 3 placeholder and is expected to fail/retry — it
+has no downstream dependents, so it never blocks the rest of the graph.
+
+### 3. Trigger a deliberate failure
+
+Trigger again, same dialog, with:
+
+```json
+{"force_failure": "load_raw_to_postgres"}
+```
+
+`load_raw_to_postgres` raises before touching any data, retries twice with a 2-minute
+delay, then fails — every downstream task is correctly left `upstream_failed` rather than
+running against incomplete data. Screenshots and the exact log line are in
+[`docs/evidence/phase-1.md`](docs/evidence/phase-1.md), section 5. Re-trigger with
+`{"force_failure": "none"}` afterwards to confirm a normal run still succeeds for the same
+logical date (also idempotent — see step 4).
+
+### 4. Verify every layer by hand
+
+```bash
+docker compose -f infra/docker-compose.yml --env-file .env exec postgres   psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
+    select 'raw.network_events' as table_name, count(*) from raw.network_events
+    union all select 'staging.stg_network_events_valid', count(*) from staging.stg_network_events_valid
+    union all select 'staging.stg_network_events_rejected', count(*) from staging.stg_network_events_rejected
+    union all select 'curated.dim_cell_site', count(*) from curated.dim_cell_site
+    union all select 'curated.dim_subscriber', count(*) from curated.dim_subscriber
+    union all select 'curated.fct_voice_call', count(*) from curated.fct_voice_call
+    union all select 'curated.fct_data_session', count(*) from curated.fct_data_session
+    union all select 'serving.vw_cell_quality_ranking', count(*) from serving.vw_cell_quality_ranking
+    union all select 'serving.vw_subscriber_churn_signals', count(*) from serving.vw_subscriber_churn_signals;
+  "
+```
+
+Or skip the hand-written SQL — `make smoke` runs exactly this (plus the infra-wiring
+checks) in one command:
+
+```bash
+make smoke
+```
+
+**Expected result:** every layer reports non-zero rows for the logical date you ran;
+`staging valid + staging rejected` equals the `raw` count exactly (every raw row is
+either published or flagged, nothing silently dropped); re-running step 2 for the same
+logical date changes none of these counts. A real run's numbers, with screenshots, are in
+[`docs/evidence/phase-1.md`](docs/evidence/phase-1.md).
 
 ## Stopping and Restarting
 
