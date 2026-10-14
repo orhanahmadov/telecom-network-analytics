@@ -48,3 +48,68 @@ def test_connector_name_matches_the_connector_config():
         (Path(__file__).resolve().parents[2] / "infra/kafka-connect/postgres-source-connector.json").read_text()
     )
     assert config["name"] == sc.CONNECTOR_NAME
+
+
+def test_checks_cover_every_pipeline_layer():
+    assert set(sc.CHECKS) == {
+        "debezium connector",
+        "kafka topic",
+        "object store (RustFS)",
+        "warehouse schemas",
+        "source layer",
+        "raw layer",
+        "staging layer",
+        "curated layer",
+        "serving layer",
+    }
+
+
+class _FakeCursor:
+    """Returns one queued row per `execute()` call, in order - enough for a row-count query."""
+
+    def __init__(self, rows):
+        self._rows = iter(rows)
+        self.queries = []
+
+    def execute(self, query):
+        self.queries.append(query)
+
+    def fetchone(self):
+        return (next(self._rows),)
+
+
+def test_table_count_runs_a_count_query_and_returns_the_row():
+    cur = _FakeCursor([42])
+    assert sc._table_count(cur, "curated.dim_cell_site") == 42
+    assert cur.queries == ["select count(*) from curated.dim_cell_site"]
+
+
+def test_layer_row_counts_reports_every_table_on_one_line(monkeypatch):
+    cur = _FakeCursor([481, 644])
+
+    class _FakeConn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def cursor(self):
+            return _FakeCursorContext(cur)
+
+    class _FakeCursorContext:
+        def __init__(self, inner):
+            self._inner = inner
+
+        def __enter__(self):
+            return self._inner
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(sc, "_warehouse_cursor", lambda: _FakeConn())
+    status, detail = sc._layer_row_counts(
+        {"fct_voice_call": "curated.fct_voice_call", "fct_data_session": "curated.fct_data_session"}
+    )
+    assert status == sc.OK
+    assert detail == "fct_voice_call: 481 row(s), fct_data_session: 644 row(s)"

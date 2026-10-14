@@ -48,7 +48,7 @@ generate-forever: ## Keep writing events until Ctrl+C
 consume: ## Consume the Kafka topic into RustFS batches (Ctrl+C to stop; make consume BATCH_SIZE=50)
 	PYTHONPATH=. $(PYTHON) -m ingestion.consumer.kafka_to_rustfs --batch-size $(BATCH_SIZE)
 
-smoke: ## Check the pipeline is wired: connector RUNNING, databases, object store, topic (stack must be up)
+smoke: ## Check the pipeline is wired AND report row counts per layer source->raw->staging->curated->serving (stack must be up)
 	PYTHONPATH=. $(PYTHON) -m scripts.smoke_check
 
 test: ## Run the test suite
