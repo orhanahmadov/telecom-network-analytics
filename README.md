@@ -102,7 +102,7 @@ make register-connector          # register the Debezium connector (idempotent)
 make generate COUNT=50           # write 50 synthetic events into the source Postgres
 make consume BATCH_SIZE=50       # land them in RustFS; Ctrl+C after the first batch
 make dbt-debug                   # dbt (inside Airflow) can connect to the warehouse
-make smoke                       # connector RUNNING, both databases, RustFS and the Kafka topic are wired
+make smoke                       # infra wiring + a row count for every layer (source -> raw -> staging -> curated -> serving)
 ```
 
 ## Stopping and Restarting
@@ -151,7 +151,7 @@ Without Make, use `docker compose -f infra/docker-compose.yml --env-file .env <c
 │   └── settings.py                     # single source of truth for all configuration
 ├── scripts/
 │   ├── init_env.py                     # generates .env with random secrets from .env.example
-│   └── smoke_check.py                  # checks the running stack is wired: connector, DBs, object store, topic
+│   └── smoke_check.py                  # checks the stack is wired + reports a row count per layer, source->serving
 ├── tests/                              # unit + contract tests (see below)
 ├── .env.example                        # every required variable, documented
 ├── ruff.toml                           # narrow lint/format rule set used by `make lint` and CI
@@ -167,7 +167,7 @@ configuration, `tests` = automated checks, `docs` = planning and design.
 
 ### Tests
 
-`make test` runs 82+ tests without Docker. Besides unit tests they include **contract
+`make test` runs 85+ tests without Docker. Besides unit tests they include **contract
 tests** that keep the pieces consistent: every `${VAR}` in `docker-compose.yml` and every
 variable read by `config/settings.py` must appear in `.env.example`; the columns the
 writer inserts must match the source DDL; the raw table must mirror the source table;
@@ -234,6 +234,9 @@ cannot be updated directly (including by the repository owner) — see
   poor-experience events over a trailing 14-day window), covered by 5 more dbt data
   tests. Heuristic thresholds and weights are initial assumptions — see
   `docs/decisions/0002-serving-layer-heuristics.md`.
+- `make smoke` proves the pipeline end to end in one command: infra wiring (connector,
+  topic, object store, warehouse schemas) plus a row count for every layer, source
+  through serving — the fastest way to answer "did the whole pipeline actually run?".
 - One-command secret generation (`make init-env`), pinned dependencies, and a CI gate
   (lint, compile-check, compose validation) on every pull request.
 - Architecture decision records for significant design choices live in `docs/decisions/`.
