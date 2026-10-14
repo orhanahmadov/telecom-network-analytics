@@ -7,9 +7,10 @@ An end-to-end data platform for a mobile network operator. It answers two questi
 2. **Which subscribers show early churn signals** — falling usage after a poor network
    experience — so Retention can act before they leave?
 
-Built incrementally, phase by phase. This delivery is **Phase 0: Infrastructure & Project
-Skeleton**. The full problem statement, data model, pipeline design, data-quality plan and
-phase roadmap are in [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md).
+Built incrementally, phase by phase. This delivery is **Phase 1: Walking Skeleton — the
+first end-to-end batch pipeline**, built on the Phase 0 infrastructure skeleton. The full
+problem statement, data model, pipeline design, data-quality plan and phase roadmap are in
+[`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md).
 
 ## Architecture
 
@@ -182,7 +183,7 @@ Every pull request (and every push to `main`) runs three independent GitHub Acti
 | Job | What it checks | Same as running locally |
 |---|---|---|
 | `lint-and-format` | `ruff check` (syntax errors, unused imports) and `ruff format --check` | `make lint` / `make format-check` |
-| `compile-check` | Every module under `config/`, `ingestion/`, `orchestration/`, `scripts/`, `transformation/`, `tests/` byte-compiles, then the Phase 0 test suite runs | `make compile-check` / `make test` |
+| `compile-check` | Every module under `config/`, `ingestion/`, `orchestration/`, `scripts/`, `transformation/`, `tests/` byte-compiles, then the full test suite runs | `make compile-check` / `make test` |
 | `compose-validate` | `infra/docker-compose.yml` is syntactically valid and every variable it references resolves | `make compose-validate` |
 
 `make lint` and `make format-check` use the rule set in [`ruff.toml`](ruff.toml) —
@@ -196,7 +197,7 @@ lightweight PR-gate runner.
 cannot be updated directly (including by the repository owner) — see
 `docs/PROJECT_PLAN.md` for the branching workflow.
 
-## Current Status — Phase 0
+## Current Status — Phase 1
 
 **Delivered**
 
