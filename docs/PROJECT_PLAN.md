@@ -139,7 +139,12 @@ flowchart LR
     AF -.orchestrates.-> STG
     AF -.orchestrates.-> CUR
     AF -.orchestrates.-> SPARK
+
+    style SPARK stroke-dasharray: 5 5
 ```
+
+*(Dashed border = wired into the DAG but still a placeholder as of Phase 1 — see the
+"Spark batch job" bullet below and section 8.)*
 
 **Component walkthrough — what each part is and why it exists**
 
@@ -367,3 +372,22 @@ make clean
 ```
 
 Without Make, every target is a plain command listed in the `Makefile`.
+
+## 11. Changelog (Phase 1)
+
+| PR | Change | Why |
+|---|---|---|
+| [#1](https://github.com/orhanahmadov/telecom-network-analytics/pull/1) | CI workflow: lint, compile-check, compose-validate | Needed before any Phase 1 code lands, so every later PR is gated by it |
+| [#2](https://github.com/orhanahmadov/telecom-network-analytics/pull/2) | Real `raw.network_events` loading, idempotent at the object and row level | The Phase 1 DoD requires a real raw layer, not a placeholder |
+| [#2b](https://github.com/orhanahmadov/telecom-network-analytics/pull/2) | Fixed a live Debezium epoch-date encoding bug, found while verifying #2 | `event_date` arrived as a raw epoch-days integer under Debezium's `io.debezium.time.Date`; needed explicit conversion |
+| [#3](https://github.com/orhanahmadov/telecom-network-analytics/pull/3) | Real staging (DQ flags) and curated (SCD2 `dim_subscriber`) dbt models, 15 data tests | Needed real staging/curated layers for the pipeline slice requirement |
+| [#3b](https://github.com/orhanahmadov/telecom-network-analytics/pull/3) | Fixed a dbt schema double-prefixing bug, found while verifying #3 | The custom `generate_schema_name.sql` macro wasn't overriding dbt's default prefixing behaviour |
+| [#4](https://github.com/orhanahmadov/telecom-network-analytics/pull/4) | Serving layer: `vw_cell_quality_ranking`, `vw_subscriber_churn_signals`, 5 more data tests | DoD requires a real serving/consumption output |
+| [#5](https://github.com/orhanahmadov/telecom-network-analytics/pull/5) | DAG `retry_delay` and a `force_failure` param | DoD requires retries with a delay and a documented, triggerable deliberate failure |
+| [#6](https://github.com/orhanahmadov/telecom-network-analytics/pull/6) | `dbt_test_staging` / `dbt_test_curated` as blocking gates; added the missing `dbt_run_serving` task | DoD requires at least one DQ check that fails the run; the serving layer had no DAG task at all until this PR |
+| [#7](https://github.com/orhanahmadov/telecom-network-analytics/pull/7) | `make smoke` extended to report row counts per layer; `docs/evidence/phase-1.md` | DoD requires a one-command smoke test reporting row counts per layer, and written evidence |
+| [#8](https://github.com/orhanahmadov/telecom-network-analytics/pull/8) | Fixed stale "Phase 0" labels left in README after Phase 1 shipped | Documentation accuracy |
+
+No ADR beyond the two already in `docs/decisions/` was needed for Phase 1's own scope —
+see section 9 for the architectural risks and assumptions tracked along the way.
+
