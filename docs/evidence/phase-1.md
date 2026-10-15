@@ -18,6 +18,9 @@ against the project's own Docker Compose stack, not a mock.
 | [#5](https://github.com/orhanahmadov/telecom-network-analytics/pull/5) | `phase-1/dag-retries-and-failure-switch` | Explicit `retry_delay`, a `force_failure` DAG param proving retries-with-delay and alerting on a real run |
 | [#6](https://github.com/orhanahmadov/telecom-network-analytics/pull/6) | `phase-1/dbt-test-gate` | `dbt_test_staging` / `dbt_test_curated` as blocking gates; added the previously-missing `dbt_run_serving` to the DAG |
 | [#7](https://github.com/orhanahmadov/telecom-network-analytics/pull/7) | `phase-1/smoke-layer-counts` | `make smoke` extended to report a row count per layer; this document |
+| [#8](https://github.com/orhanahmadov/telecom-network-analytics/pull/8) | `phase-1/readme-phase-label` | Corrected stale "Phase 0" labels left in README after Phase 1 shipped |
+| [#9](https://github.com/orhanahmadov/telecom-network-analytics/pull/9) | `phase-1/run-pipeline-docs` | README "Run the Pipeline" section, component-role mapping, PROJECT_PLAN changelog |
+| [#10](https://github.com/orhanahmadov/telecom-network-analytics/pull/10) | `phase-1/two-dates-and-restart-evidence` | Two-logical-dates and infrastructure-restart proof added to this document |
 
 Every one of the above arrived as a pull request into the protected `main` branch, with
 CI green before merge (branch protection requires the three CI jobs to pass; direct
@@ -138,14 +141,77 @@ whole pipeline from raw to serving runs under one DAG trigger.
 `2026-10-06`, triggered manually on `2026-10-13`/`2026-10-14`, which is itself evidence
 that the date is a parameter and not derived from wall-clock time.
 
-## 8. CI
+## 8. Two logical dates, side by side, without one overwriting the other
+
+Proven on a live run (2026-10-15): a second batch of 1500 events was generated and
+consumed, landing under `raw/network_events/dt=2026-10-14/...` - a different logical date
+from the `2026-10-06` batch used in §1-§7. The DAG was triggered for that date
+(`manual__2026-10-14T12:00:00+00:00`, `{"force_failure": "none"}`), and the real pipeline
+path (`load_raw_to_postgres` through `dbt_test_serving`) ran clean - only the Phase 3
+Spark placeholder failed, as expected (§6, §11):
+
+![DAG run succeeds for logical date 2026-10-14](images/06-second-date-graph.png)
+
+![Event log: dbt_test_staging success for run 2026-10-14T12:00:00](images/05-second-date-eventlog-success.png)
+
+Row counts before and after, confirming nothing was overwritten:
+
+| Table | Before (date `2026-10-06` only) | After (both dates loaded) |
+|---|---|---|
+| `raw.network_events` | 1400 | 2900 (+1500, zero loss this run) |
+| `curated.fct_voice_call` | 481 | 973 |
+| `curated.fct_data_session` | 644 | 1378 |
+
+Breaking `fct_voice_call` down by the event's own date makes the point directly - both
+logical dates are present, independently, in the same table:
+
+```
+ event_date | count
+------------+-------
+ 2026-10-06 |   481
+ 2026-10-14 |   492
+(2 rows)
+```
+
+## 9. Infrastructure restart preserves state, and the pipeline runs again afterwards
+
+Proven on the same live session, immediately after §8: `make smoke` was run to capture a
+full baseline, then `make down` (stops and removes every container) and `make up`
+(rebuilds them against the same named volumes) were run back to back - not just a
+container restart, a full teardown and recreation.
+
+**Baseline, immediately before `make down`:**
+
+```
+[  OK] source layer: source.network_events: 3000 row(s)
+[  OK] raw layer: raw.network_events: 2900 row(s)
+[  OK] staging layer: stg_network_events_valid: 2742 row(s), stg_network_events_rejected: 158 row(s)
+[  OK] curated layer: dim_cell_site: 60 row(s), dim_subscriber: 1500 row(s), fct_voice_call: 973 row(s), fct_data_session: 1378 row(s)
+[  OK] serving layer: vw_cell_quality_ranking: 60 row(s), vw_subscriber_churn_signals: 0 row(s)
+```
+
+After `make down` (all 13 containers removed) and `make up` (all services back to
+`healthy`, including the Debezium connector reconnecting on its own - no manual
+`make register-connector` needed), `make smoke` was run again with **zero changes
+required** - every number matches the baseline above exactly, byte for byte.
+
+The pipeline was then triggered again (`manual__2026-10-14T18:00:00+00:00`, same logical
+date `2026-10-14`, different time of day so Airflow accepts a new DAG run) to prove it
+still runs successfully post-restart, not just that the warehouse survived:
+
+![Post-restart run succeeds](images/07-post-restart-run-success.png)
+
+`make smoke` afterwards reported the exact same numbers a third time - the post-restart
+run was correctly idempotent too.
+
+## 10. CI
 
 Every pull request listed in §1 ran the three CI jobs (`lint-and-format`,
 `compile-check`, `compose-validate`) and merged only once all three were green, per the
 branch protection rules on `main` (`docs/PROJECT_PLAN.md`, section 6, "Branching
 workflow"). `make test` currently runs 85+ tests with no Docker required.
 
-## 9. Known gaps, carried forward on purpose
+## 11. Known gaps, carried forward on purpose
 
 - **Spark `agg_cell_hourly_kpi`** is still the Phase 0 CLI skeleton (`NotImplementedError`)
   - real logic ships in Phase 3, per `docs/PROJECT_PLAN.md` section 8. Its task in the DAG
